@@ -2,6 +2,13 @@
 
 Version history for the Olibana Project Root Specification. This spec is a living document; each substantive revision increments the version and is recorded here.
 
+## v1.2 — 2026-08-15
+
+Second master directive received (*Zero-Cost / Cognitive-UX / Performance / Design-System Master Optimization Prompt*, 50 pp.). Audit only; still no implementation code.
+
+- `docs/website/21_UX_PERFORMANCE_COST_AUDIT.md` — audit in the 31-section format that directive requires. Records six concrete collisions between the two master directives' priority orders and proposes a resolution; adds cognitive load map, abandonment map, UX and performance failure trees, dependency budget, OSS assessment, and a verified near-zero-cost architecture.
+- Supersedes the Shopify Headless recommendation in `01_SITE_AUDIT.md` §15.4: under the new cost constraint, Cloudflare Pages plus hosted Stripe Checkout carries $0 fixed cost against roughly $468/yr before a first sale.
+
 ## v1.1 — 2026-08-15
 
 Website programme, Phase 0–1. No implementation code.
