@@ -2,6 +2,13 @@
 
 Version history for the Olibana Project Root Specification. This spec is a living document; each substantive revision increments the version and is recorded here.
 
+## v1.4 — 2026-08-15
+
+Execution support for the first garment. Design and operating tools only; no implementation code.
+
+- `docs/business/03_SUPPLIER_SOURCING.md` — verified routes to small-lot apparel OEM in Japan and Korea, shortlisting criteria, and the outreach sequence. Corrects an optimistic assumption in the previous document: industry "small lot" generally means 50–100 units, not 10–30, which raises the pre-order minimum and adds a required question about sub-MOQ production terms.
+- `docs/business/tools/UNIT_ECONOMICS_CALCULATOR.xlsx` — quote comparison and break-even calculator. Fixed costs amortise across quantity tiers; the lowest tier with positive contribution becomes the pre-order minimum quantity. Blank inputs refuse to calculate rather than defaulting to zero.
+
 ## v1.3 — 2026-08-15
 
 Third master directive received (*Business / System / Autonomous Loop Failure Elimination*, 45 pp.). Audit only; still no implementation code.
