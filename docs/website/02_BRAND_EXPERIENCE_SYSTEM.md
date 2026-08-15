@@ -3,7 +3,8 @@
 **Document:** `02_BRAND_EXPERIENCE_SYSTEM.md`
 **Version:** v1.0
 **Phase:** 1 — Design Documentation
-**Scope:** MVP-0 (Brand World). Commerce surfaces are specified but not built in this stage.
+**Scope:** MVP-1P (one product, complete loop) — see [ADR-002](../adr/ADR-002-mvp-boundary.md). Where this document says "MVP-0", read MVP-1P: the same brand-world surfaces, now shipping *around* one real product rather than instead of one.
+**Scheduling note:** per [ADR-001](../adr/ADR-001-directive-priority-resolution.md), this specification remains valid but its implementation waits behind open P0 business failures (`RISK_REGISTER.md`).
 **Depends on:** `Brand_Bible.md`, `Character_Bible.md` v1.1, `Design_System.md`, the four Atlases
 
 ---
