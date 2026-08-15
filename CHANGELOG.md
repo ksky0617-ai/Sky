@@ -2,6 +2,16 @@
 
 Version history for the Olibana Project Root Specification. This spec is a living document; each substantive revision increments the version and is recorded here.
 
+## v1.3 — 2026-08-15
+
+Third master directive received (*Business / System / Autonomous Loop Failure Elimination*, 45 pp.). Audit only; still no implementation code.
+
+- `docs/business/01_BUSINESS_SYSTEM_LOOP_AUDIT.md` — audit in the 30-section format that directive requires. Business loop mapped node by node (0 of 22 connected), 11 loop breakpoints, business failure tree, risks classified P0–P2, inventory model comparison, order state machine, failure recovery chains, traceability design.
+- `RISK_REGISTER.md` — 16 risks with the fields the directive specifies. 6 P0, 7 P1, 3 P2, none resolved.
+- `docs/business/UNIT_ECONOMICS.md` — per-unit contribution template. 2 of 13 lines known, contribution profit uncomputable; unknowns recorded as UNKNOWN with a resolution plan rather than estimated.
+- Supersedes the MVP-0 recommendation in `01_SITE_AUDIT.md` §19. A brand world built before the business model is the failure mode the directive's first prohibition names. Revised target: one garment sold end to end, exercising every loop node at minimum scale.
+- Supersedes the zero-inventory framing in the first directive: print-on-demand is disqualified on brand grounds because it cannot express construction derived from natural structure. Pre-order recommended for launch.
+
 ## v1.2 — 2026-08-15
 
 Second master directive received (*Zero-Cost / Cognitive-UX / Performance / Design-System Master Optimization Prompt*, 50 pp.). Audit only; still no implementation code.
