@@ -1,0 +1,12 @@
+{
+  "name": "olibana",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Olibana — pre-order commerce system. See STATE.md for current state.",
+  "engines": { "node": ">=22.6.0" },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/**/*.test.ts",
+    "typecheck": "echo 'typecheck: no compiler installed; strip-types runs without checking. See STATE.md BG-01.' && exit 0"
+  }
+}

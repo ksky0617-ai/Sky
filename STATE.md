@@ -1,6 +1,6 @@
 # STATE — Olibana Resume Entrypoint
 
-**Updated:** 2026-08-15 · **Commit at write time:** `fde4887` · **Branch:** `claude/olibana-project-spec-76ivk7`
+**Updated:** 2026-08-15 · **Commit at write time:** `17823e8` · **Branch:** `claude/olibana-project-spec-76ivk7`
 **Governance:** [`PROTOCOL_LOCK.md`](./PROTOCOL_LOCK.md) (LOCKED)
 
 > Read this file first. Then verify every claim below against actual repository state — **repository state outranks this file** (I-18). This file is a pointer, not an authority.
@@ -15,18 +15,18 @@
 | `BUILD_GATE` | **FALSE** |
 | `COMPLETION_GATE` | **FALSE** |
 | `REFINEMENT_MODE` | FALSE (requires COMPLETION_GATE=TRUE + human approval) |
-| `CURRENT_PHASE` | Pre-implementation. Specification complete, zero code. |
-| `CURRENT_CYCLE` | Cycle 3 under governance vNext |
+| `CURRENT_PHASE` | **Implementation started.** First component built and verified: order state machine. |
+| `CURRENT_CYCLE` | Cycle 4 under governance vNext |
 | `CURRENT_CRITICAL_PATH` | ~~품목 결정~~ ✅ → **실측·사양 기입 → 견적 발송** → 원가 → 가격 → minimum_quantity → pre-order |
-| `LAST_VERIFIED_STATE` | Repository forensic audit, 2026-08-15. 26 tracked files (25 `.md` + 1 `.xlsx`), **0 source files, 0 tests, 0 manifests, 0 assets**. Verified by direct `find`/`git ls-files` scan. |
+| `LAST_VERIFIED_STATE` | **V1 unit + V4 mutation, 2026-08-15.** `npm test` → 15/15 pass. 4 deliberate mutations all caught; source restored byte-identical. Order state machine conforms to spec: 20 directed edges, 3 terminal states, guards, idempotency. |
 | `OPEN_BLOCKERS` | **6 × P0** (P0-1 closed by ADR-005), 7 × P1 — see [`RISK_REGISTER.md`](./RISK_REGISTER.md) and §4 below |
-| `RECENT_CHANGE` | Cycle 3: ADR-005 (category = Outerwear), ADR-006 (brand-direction conflict, OPEN), `05_OUTERWEAR_SPEC_PACK.md`, PROTOCOL_LOCK amendment HG-R1. Cycle 2: `04_GARMENT_CATEGORY_DECISION_PACK.md`. Cycle 1: `PROTOCOL_LOCK.md`, `STATE.md`. No code change in any. |
-| `RECENT_VERIFICATION` | V-2026-08-15-003 (V0) — outerwear spec pack completeness. Prior: V-002, V-001. |
+| `RECENT_CHANGE` | **Cycle 4: first code.** `package.json`, `.gitignore`, `src/order/state-machine.ts`, `test/order/state-machine.test.ts`, ADR-007. Zero runtime dependencies. Cycle 3: ADR-005/006, `05_OUTERWEAR_SPEC_PACK.md`, HG-R1. Cycle 2: `04_…`. Cycle 1: `PROTOCOL_LOCK.md`, `STATE.md`. |
+| `RECENT_VERIFICATION` | V-2026-08-15-004 (V1+V4) — order state machine, 15/15 pass, 4/4 mutations caught. Prior: V-003, V-002, V-001. |
 | `CURRENT_RISKS` | 16 recorded, 0 resolved. Dominant: no supplier (R-01), unit economics unknown (R-03), fabricated-claim risk (R-08) |
 | `PENDING_HUMAN_DECISIONS` | HG-2026-001 **RESOLVED** (ADR-005). Open: **ADR-006 brand-direction conflict** (non-blocking, required before design spec); **P0-7 legal entity** (HG-04, required before payment). |
-| `NEXT_ACTION_1` | User fills `05_OUTERWEAR_SPEC_PACK.md` A–D (item, measurements, construction, references) |
-| `NEXT_ACTION_2` | Assemble dispatch pack per §E and send to 3–5 candidates, identical wording and quantity bands |
-| `NEXT_ACTION_3` | On quote return: record verbatim → calculator → break-even quantity → price. No user decision until price approval. |
+| `NEXT_ACTION_1` | **User (parallel, unblocked):** fill `05_OUTERWEAR_SPEC_PACK.md` A–D → dispatch per §E |
+| `NEXT_ACTION_2` | **Autonomous:** identifier module (ULID/order-number/SKU) per `02_…` Part 4 — pure, no pending input |
+| `NEXT_ACTION_3` | **Autonomous:** unit-economics / break-even calculation module per `02_…` §1.4 — pure, mirrors the spreadsheet |
 | `RELEVANT_FILES` | §7 below |
 | `RESUME_ENTRYPOINT` | This file |
 
@@ -35,9 +35,9 @@
 | Question | Answer |
 |---|---|
 | **What is complete?** | The specification corpus: brand doctrine, four Atlases (method only), website design system, business loop audit, risk register, ADR-001…006, first-garment execution pack, category decision pack, outerwear spec pack, supplier sourcing, unit-economics calculator. |
-| **What is verified?** | Only repository facts, at tier V0 (static inspection): file inventory, git history, absence of code. **No functional behaviour has ever been verified — there is no code to verify.** |
-| **What is not verified?** | Everything functional. Every entity, state machine, identifier scheme, and price is `SPEC_ONLY`. |
-| **What is blocked?** | The build (no code). Commerce path is unblocked but awaiting spec fill → quotation. See §4. |
+| **What is verified?** | **Order state transitions, at V1 (unit) and V4 (mutation).** 20 spec edges conform, 3 terminal states, guarded undersubscription, idempotent replay, rejections recorded. 15/15 pass; 4/4 deliberate mutations caught. Everything else remains V0 or unverified. |
+| **What is not verified?** | Everything except order transitions. Product, variant, pre-order run, payment, shipment, identifiers, pricing — all `SPEC_ONLY`. No persistence, no I/O, no integration verified. |
+| **What is blocked?** | Nothing autonomous. The commerce path awaits the user's spec fill → quotation; implementation continues in parallel on pure, spec-determined modules. |
 | **Why is it blocked?** | Category resolved (ADR-005: Outerwear). The build now waits on cost and price, which wait on a quotation, which waits on the spec pack being filled. No decision is outstanding on this path. |
 | **What is the current critical path?** | ~~품목~~ ✅ → **실측·사양 기입 → 견적 발송** → 원가 → 가격 → `PreorderRun.minimum_quantity` → pre-order open |
 | **What is the next action?** | Fill `docs/business/05_OUTERWEAR_SPEC_PACK.md` A–D, then dispatch per §E. |
@@ -50,14 +50,14 @@
 
 | | Criterion | Value | Evidence |
 |---|---|:---:|---|
-| BG-01 | Contract Integrity | TRUE | ADR supersessions marked in place; no unresolved spec conflict |
-| BG-02 | Executability | **FALSE** | 0 manifests, 0 source files, no runtime |
-| BG-03 | Testability | **FALSE** | 0 test files |
-| BG-04 | Critical Path Coverage | **FALSE** | 0 of 13 MVP nodes implemented |
-| BG-05 | Invariant Protection | **FALSE** | No test or guard mechanism exists |
-| BG-06 | Reproducibility | **FALSE** | Nothing to re-run |
+| BG-01 | Contract Integrity | TRUE | Spec conflict found during implementation and recorded as ADR-007 rather than silently resolved |
+| BG-02 | Executability | **TRUE** | `package.json`; `npm test` runs on Node 22 via `--experimental-strip-types`, 0 deps |
+| BG-03 | Testability | **TRUE** | `node:test`, 15 assertions over the order state machine |
+| BG-04 | Critical Path Coverage | **FALSE** | 1 of 13 MVP nodes has code (order transitions). No product, page, payment, or persistence. |
+| BG-05 | Invariant Protection | **PARTIAL** | Order-transition invariants protected and mutation-verified. Price, SKU, and availability integrity have no code yet. |
+| BG-06 | Reproducibility | **TRUE** | `npm test` re-runs deterministically; no network, no clock dependency in assertions |
 | BG-07 | Persistence | **TRUE** | This file + `PROTOCOL_LOCK.md` |
-| BG-08 | Failure Handling | **FALSE** | Specified only (`02_FIRST_GARMENT_EXECUTION.md` Part 3) |
+| BG-08 | Failure Handling | **PARTIAL** | Order rejection paths implemented, recorded, and tested. Payment, production, and shipping recovery unimplemented. |
 | BG-09 | Security Boundary | UNVERIFIED | No system exists; attack surface is 0 but untested |
 | BG-10 | No Critical Blocker | **FALSE** | 6 open P0 (P0-1 closed) |
 
@@ -81,21 +81,32 @@ CG-02, CG-03, CG-05, CG-06, CG-09, CG-10, CG-11 all FALSE. CG-08 now TRUE. Not r
 ## 5. This Cycle's Verification (§28)
 
 ```
-VERIFICATION ID:  V-2026-08-15-003
-TARGET:           Outerwear spec pack — quotation-readiness completeness
-EXPECTED:         All construction elements that drive sewing cost enumerated;
-                  3-size measurement sheet; dispatch checklist; zero fabricated values
-OBSERVED:         see commit; 13 measurement points x 3 sizes, 13 construction
-                  sections, 8-item dispatch checklist, 0 asserted absolute figures
+VERIFICATION ID:  V-2026-08-15-004
+TARGET:           src/order/state-machine.ts — order transition invariants
+TEST METHOD:      V1 unit (node:test) + V4 adversarial mutation
+PRECONDITION:     No runtime existed; nothing above V0 was verifiable
+EXPECTED:         20 spec edges conform; forbidden transitions rejected and recorded;
+                  guards enforce committed vs minimum; duplicate delivery is a no-op
+OBSERVED:         15/15 tests pass
+                  Mutations injected and all caught:
+                    M1 allow IN_PRODUCTION -> CANCELLED     -> 3 failures
+                    M2 make CANCELLED terminal              -> 2 failures
+                    M3 undersubscription boundary >= to >   -> 1 failure
+                    M4 idempotency check disabled           -> 1 failure
+                  Source restored byte-identical; 15/15 re-pass
 RESULT:           PASS
-LIMITATION:       V0 only. Verifies the pack is structurally complete for dispatch.
-                  Does NOT verify that a factory will accept it — that is V6
-                  production-boundary verification, reachable only by sending it.
-CONCLUSION:       P0-1 closed. P0-2 becomes the live node. BUILD_GATE unchanged (FALSE).
+ENVIRONMENT:      Node v22.22.2, --experimental-strip-types, zero dependencies
+LIMITATION:       Pure logic only. No persistence, no webhook, no payment, no
+                  concurrency. Idempotency is verified against a supplied key set,
+                  NOT against a database unique constraint — that is V2/V3 work
+                  and remains unverified.
+CONCLUSION:       BG-02, BG-03, BG-06 -> TRUE. BG-05, BG-08 -> PARTIAL.
+                  BUILD_GATE still FALSE (BG-04, BG-10 FALSE).
 
 --- prior ---
-V-2026-08-15-002  Decision pack completeness — PASS
-V-2026-08-15-001  Resume contract (BG-07, CG-08) — PASS
+V-003 outerwear spec pack (V0) — PASS
+V-002 category decision pack (V0) — PASS
+V-001 resume contract (V0) — PASS
 ```
 
 ## 6. Pending Human Decisions
@@ -123,10 +134,12 @@ P0-7 — Legal entity and policies            STATUS: OPEN (HG-04)
 | Governance (LOCKED) | `PROTOCOL_LOCK.md` |
 | Resume entrypoint | `STATE.md` |
 | Risk register | `RISK_REGISTER.md` |
-| Decisions | `docs/adr/ADR-001 … ADR-006` |
+| Decisions | `docs/adr/ADR-001 … ADR-007` |
 | Critical-path execution pack | `docs/business/02_FIRST_GARMENT_EXECUTION.md` |
 | Category decision pack | `docs/business/04_GARMENT_CATEGORY_DECISION_PACK.md` |
-| **Active work item** | `docs/business/05_OUTERWEAR_SPEC_PACK.md` |
+| **Active work item (user)** | `docs/business/05_OUTERWEAR_SPEC_PACK.md` |
+| **Source** | `src/order/state-machine.ts` |
+| **Tests** | `test/order/state-machine.test.ts` |
 | Supplier routes | `docs/business/03_SUPPLIER_SOURCING.md` |
 | Unit economics | `docs/business/UNIT_ECONOMICS.md`, `docs/business/tools/UNIT_ECONOMICS_CALCULATOR.xlsx` |
 | Business loop audit | `docs/business/01_BUSINESS_SYSTEM_LOOP_AUDIT.md` |
