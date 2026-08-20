@@ -1,6 +1,6 @@
 # STATE — Olibana Resume Entrypoint
 
-**Updated:** 2026-08-15 · **Commit at write time:** `8b37d2e` · **Branch:** `claude/olibana-project-spec-76ivk7`
+**Updated:** 2026-08-15 · **Commit at write time:** `1c17dce` · **Branch:** `claude/olibana-project-spec-76ivk7`
 **Governance:** [`PROTOCOL_LOCK.md`](./PROTOCOL_LOCK.md) (LOCKED)
 
 > Read this file first. Then verify every claim below against actual repository state — **repository state outranks this file** (I-18). This file is a pointer, not an authority.
@@ -16,17 +16,17 @@
 | `COMPLETION_GATE` | **FALSE** |
 | `REFINEMENT_MODE` | FALSE (requires COMPLETION_GATE=TRUE + human approval) |
 | `CURRENT_PHASE` | Pre-implementation. Specification complete, zero code. |
-| `CURRENT_CYCLE` | Cycle 1 under governance vNext |
+| `CURRENT_CYCLE` | Cycle 2 under governance vNext |
 | `CURRENT_CRITICAL_PATH` | 품목 결정 → Fashion Spec → 견적 → 원가 → 가격 → minimum_quantity → pre-order |
 | `LAST_VERIFIED_STATE` | Repository forensic audit, 2026-08-15. 26 tracked files (25 `.md` + 1 `.xlsx`), **0 source files, 0 tests, 0 manifests, 0 assets**. Verified by direct `find`/`git ls-files` scan. |
 | `OPEN_BLOCKERS` | 7 × P0, 7 × P1 — see [`RISK_REGISTER.md`](./RISK_REGISTER.md) and §4 below |
-| `RECENT_CHANGE` | This cycle: created `PROTOCOL_LOCK.md`, `STATE.md`. No code change. |
-| `RECENT_VERIFICATION` | V0 static inspection (§5 below) |
+| `RECENT_CHANGE` | Cycle 2: created `docs/business/04_GARMENT_CATEGORY_DECISION_PACK.md`. Cycle 1: created `PROTOCOL_LOCK.md`, `STATE.md`. No code change in either. |
+| `RECENT_VERIFICATION` | V-2026-08-15-002 (V0) — decision-pack completeness. V-2026-08-15-001 (V0) — resume contract. |
 | `CURRENT_RISKS` | 16 recorded, 0 resolved. Dominant: no supplier (R-01), unit economics unknown (R-03), fabricated-claim risk (R-08) |
 | `PENDING_HUMAN_DECISIONS` | **HG-2026-001 — garment category selection** (see §6) |
 | `NEXT_ACTION_1` | Resolve HG-2026-001 (human) |
-| `NEXT_ACTION_2` | On resolution: flat sketch + 3-size spec + reference images (autonomous support) |
-| `NEXT_ACTION_3` | Send supplier quotation request (`docs/business/02_FIRST_GARMENT_EXECUTION.md` §1.2/§1.3) to 3–5 candidates |
+| `NEXT_ACTION_2` | On resolution: user records measurements + flat sketch per `04_GARMENT_CATEGORY_DECISION_PACK.md` §3/§4 (checklists already prepared) |
+| `NEXT_ACTION_3` | Assemble dispatch pack and send to 3–5 candidates (`02_…` §1.2/§1.3 + `03_SUPPLIER_SOURCING.md`). No further user decision needed past this point until quotes return. |
 | `RELEVANT_FILES` | §7 below |
 | `RESUME_ENTRYPOINT` | This file |
 
@@ -81,15 +81,31 @@ CG-02, CG-03, CG-05, CG-06, CG-09, CG-10, CG-11 all FALSE. CG-08 now TRUE. Not r
 ## 5. This Cycle's Verification (§28)
 
 ```
+VERIFICATION ID:  V-2026-08-15-002
+TARGET:           Garment category decision pack — decision-scope minimisation (§23)
+PRECONDITION:     HG-2026-001 open; post-decision work undefined
+EXPECTED:         4/4 categories covered for rule-execution, measurements, sketch
+                  checklist; zero fabricated absolute figures; no recommendation (G-05)
+TEST METHOD:      V0 static inspection
+OBSERVED:         4/4 categories in rule-execution matrix
+                  4/4 measurement blocks · 4/4 sketch checklist blocks
+                  0 absolute currency figures asserted · 7 UNKNOWN markers
+                  explicit no-recommendation present · 0 advocacy lines
+                  0 LOCKED artifacts modified
+RESULT:           PASS
+LIMITATION:       V0 only. Narrows the decision; does not resolve it.
+                  Relative complexity ordering is derived from construction
+                  (pattern pieces, operations) — absolute values remain UNKNOWN
+                  and are obtainable only by quotation.
+CONCLUSION:       Decision scope reduced. BUILD_GATE unchanged (FALSE).
+                  No critical-path blocker removed.
+
+--- prior ---
 VERIFICATION ID:  V-2026-08-15-001
 TARGET:           Persistence & auto-resume artifacts (BG-07, CG-08)
-PRECONDITION:     No RESUME/STATE/SSOT/PROTOCOL_LOCK artifact existed (verified by direct file check)
-EXPECTED:         Repository alone answers all nine §35 questions and holds all eighteen §36 fields
-TEST METHOD:      V0 static inspection
-RESULT:           see §8
-ENVIRONMENT:      git repository, no runtime
+RESULT:           PASS — 9/9 resume questions, 18/18 fields, 20/20 invariants,
+                  20/20 governance rules, 10/10 BG criteria evaluated
 VERSION:          written against 8b37d2e
-LIMITATION:       V0 only. Does not verify any system behaviour — none exists.
 ```
 
 ## 6. Pending Human Decision
@@ -128,8 +144,15 @@ REVERSIBILITY:          High before a quotation is requested. Low afterwards —
 RECOMMENDED OPTION:     No recommendation. This is a brand value judgment and
                         G-05 forbids an unapproved aesthetic determination.
 MINIMUM DECISION:       One word — the category. Nothing else is required now.
-DEFAULT PATH IF APPROVED: Produce flat-sketch checklist and measurement list for
-                        that category, then the quotation dispatch pack.
+DECISION SCOPE:         Narrowed in Cycle 2. Rule-execution capacity per category,
+                        relative cost/lead ordering, per-category measurement lists
+                        and flat-sketch checklists are all now fixed in
+                        docs/business/04_GARMENT_CATEGORY_DECISION_PACK.md.
+                        The remaining decision is the single trade-off: the category
+                        that carries the most brand rules also carries the most
+                        capital risk and the longest lead time.
+DEFAULT PATH IF APPROVED: User records measurements + flat sketch from the prepared
+                        checklist; dispatch pack assembles automatically thereafter.
 ```
 
 `P0-7` (legal entity, HG-04) is a second pending gate but is not on the critical path until payment is enabled.
@@ -143,6 +166,7 @@ DEFAULT PATH IF APPROVED: Produce flat-sketch checklist and measurement list for
 | Risk register | `RISK_REGISTER.md` |
 | Decisions | `docs/adr/ADR-001 … ADR-004` |
 | Critical-path execution pack | `docs/business/02_FIRST_GARMENT_EXECUTION.md` |
+| Category decision pack | `docs/business/04_GARMENT_CATEGORY_DECISION_PACK.md` |
 | Supplier routes | `docs/business/03_SUPPLIER_SOURCING.md` |
 | Unit economics | `docs/business/UNIT_ECONOMICS.md`, `docs/business/tools/UNIT_ECONOMICS_CALCULATOR.xlsx` |
 | Business loop audit | `docs/business/01_BUSINESS_SYSTEM_LOOP_AUDIT.md` |
