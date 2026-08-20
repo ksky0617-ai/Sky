@@ -101,6 +101,36 @@ Decision tree — escalate only after all four fail:
 
 Categories: `HG-01` True Undefined · `HG-02` Value Judgment · `HG-03` Irreversible External Effect · `HG-04` Legal/Regulatory · `HG-05` Financial Commitment · `HG-06` Physical Execution · `HG-07` Final Promotion · `HG-08` Explicit Human Stop
 
+### HG-R1 — Reversible Classification Default
+
+**Amendment 2026-08-15.** Authority: explicit brand-owner instruction following HG-2026-001. Recorded here rather than applied silently (§70).
+
+**Problem observed.** HG-2026-001 (garment category) halted the critical path for a full cycle. The escalation was correct under HG-02, but it was escalated as an *open question* when the LOCKED constraints already discriminated sharply between the options — outerwear scored 9–10 of 10 on Atlas rule-execution against 4–6 for the alternatives. A blocking gate was used where a reversible default would have served.
+
+**Rule.** A classification or enumeration decision does **not** block when all four hold:
+
+```
+1. The option set is closed and enumerable
+2. LOCKED constraints measurably discriminate between the options
+3. The decision is reversible before any external commitment
+4. No financial, legal, physical, or irreversible effect is triggered by proceeding
+```
+
+When all four hold: derive the default from the LOCKED constraints, **state the derivation and the revert point**, proceed, and notify rather than ask. The gate becomes a notification with an objection window.
+
+**The gate stays blocking when any of these hold:**
+
+```
+· LOCKED constraints do not discriminate — the options rank equally
+· Proceeding creates an external commitment (quotation sent, order placed, contract, spend)
+· The decision is aesthetic in substance, not structural   ← G-05 is NOT relaxed
+· Reversal would sink cost already incurred
+```
+
+**Boundary that must not erode.** Deriving a default from documented structural constraints is not an aesthetic judgment. Choosing between options the constraints rank equally *is*, and remains HG-02. G-05 is unchanged: no unapproved aesthetic value judgment.
+
+**Revert point is mandatory.** A default proceeds only while it is still cheap to undo. Once an external commitment is made against it, it is no longer a default — it is a decision, and it requires the record an ADR would carry.
+
 Escalation must include: Decision ID · Decision Required · Why Load-Bearing · Current Facts · Locked Constraints · Unknown · Options · Consequences · Risks · Reversibility · Recommended Option · Minimum Decision Required · Default Path If Approved.
 
 ## 8. Change Safety & External Effect
