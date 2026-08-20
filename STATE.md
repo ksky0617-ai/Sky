@@ -84,41 +84,21 @@ CG-02, CG-03, CG-05, CG-06, CG-09, CG-10, CG-11 all FALSE. CG-08 now TRUE. Not r
 
 **No open P0 on the critical path requires a human decision.** P0-2 is live and needs the spec pack filled, not a decision. P0-3/4/5/6 are mechanically downstream. P0-7 (legal) is a Human Gate but sits off the current path until payment activation.
 
-## 5. This Cycle's Verification (§28)
+## 5. Verification
+
+**Full history: [`VERIFICATION_LOG.md`](./VERIFICATION_LOG.md)** — that file is the single source of truth for verification evidence. It is not duplicated here; a second copy would drift, which is the defect this cycle removed from the code.
+
+**Current headline:**
 
 ```
-VERIFICATION ID:  V-2026-08-15-005
-TARGET:           src/identity/ids.ts, src/economics/break-even.ts
-TEST METHOD:      V1 unit (node:test) + V4 adversarial mutation
-OBSERVED:         39/39 tests pass (15 order + 12 identity + 12 economics)
-                  Mutations injected, all caught:
-                    M5  unknown cost coerced to 0            -> 3 failures
-                    M6  fixed-cost amortisation removed      -> 2 failures
-                    M7  largest instead of smallest tier     -> 2 failures
-                    M8  MOQ ignored when above break-even    -> 1 failure
-                    M9  customer id made sequential          -> 1 failure
-                    M10 ULID timestamp removed               -> 2 failures
-                  Sources restored byte-identical; 39/39 re-pass
-RESULT:           PASS
-TEST DEFECT FOUND: The first run failed 2 of 39. Cause was a TEST bug, not an
-                  implementation bug (SPEC §78 classification): the expected
-                  break-even was asserted at 30 without computing it, while tier
-                  20 clears at +6,778. Expectation corrected and the test
-                  strengthened to assert the break-even is a boundary — every
-                  tier below unprofitable, every tier at or above profitable —
-                  rather than a single magic number.
-LIMITATION:       Pure logic only. No persistence, no I/O, no concurrency.
-                  Break-even is verified against synthetic tiers; no real
-                  supplier quotation exists, so no actual minimumQuantity is
-                  computed and none is asserted.
-CONCLUSION:       BG-05 coverage widened. BUILD_GATE still FALSE (BG-04, BG-10).
-
---- prior ---
-V-004 order state machine (V1+V4) — PASS, 4/4 mutations caught
-V-003 outerwear spec pack (V0) — PASS
-V-002 category decision pack (V0) — PASS
-V-001 resume contract (V0) — PASS
+LATEST:      V-2026-08-15-006 (V1 + V4, independent spec conformance)
+SUITE:       47/47 pass
+MUTATIONS:   14 run to date · 13 caught · 1 survivor root-caused and eliminated
+HIGHEST TIER REACHED: V4 (adversarial). No V2, V3, or V6 has ever been run.
+NEVER EXERCISED: persistence · I/O · network · concurrency · payment · production boundary
 ```
+
+**Standing caveat.** Conformance verifies that the implementation matches the specification document. It does not verify that the specification is correct, and 4 prose-quantified forbidden rules sit outside machine verification — disclosed by an assertion in `test/conformance/`, not assumed covered.
 
 ## 6. Pending Human Decisions
 
