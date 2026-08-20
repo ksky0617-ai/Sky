@@ -32,7 +32,14 @@ export const ORDER_STATUSES: readonly OrderStatus[] = [
 ] as const;
 
 /**
- * Terminal states have no outgoing transition.
+ * Terminal states — those with no outgoing transition.
+ *
+ * DERIVED from ALLOWED_TRANSITIONS below, never listed separately. A literal
+ * list here would be a second encoding of the same fact, free to drift from the
+ * edge map; an adversarial audit confirmed the drift was undetectable from the
+ * edge map alone. Deriving it removes the failure class instead of testing for it.
+ *
+ * The set resolves to DELIVERED, REFUNDED, PAYMENT_FAILED.
  *
  * CANCELLED is deliberately NOT terminal. The spec diagram (§3.1) marks it
  * terminal while the transition table (§3.2) allows CANCELLED → REFUNDED.
@@ -41,11 +48,9 @@ export const ORDER_STATUSES: readonly OrderStatus[] = [
  * always holds customer money. Treating it as terminal would strand funds.
  * Recorded in docs/adr/ADR-007-spec-conflict-cancelled-terminal.md.
  */
-export const TERMINAL_STATUSES: ReadonlySet<OrderStatus> = new Set<OrderStatus>([
-  'DELIVERED',
-  'REFUNDED',
-  'PAYMENT_FAILED',
-]);
+export function terminalStatuses(): ReadonlySet<OrderStatus> {
+  return new Set(ORDER_STATUSES.filter((s) => ALLOWED_TRANSITIONS[s].length === 0));
+}
 
 /** Context a guarded transition needs in order to be evaluated. */
 export interface TransitionContext {
@@ -148,7 +153,7 @@ export function isTransitionAllowed(from: OrderStatus, to: OrderStatus): boolean
 }
 
 export function isTerminal(status: OrderStatus): boolean {
-  return TERMINAL_STATUSES.has(status);
+  return ALLOWED_TRANSITIONS[status].length === 0;
 }
 
 function evaluateTransition(

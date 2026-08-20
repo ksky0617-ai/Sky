@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   ALLOWED_TRANSITIONS,
   ORDER_STATUSES,
-  TERMINAL_STATUSES,
+  terminalStatuses,
   applyTransition,
   isTerminal,
   isTransitionAllowed,
@@ -65,7 +65,7 @@ test('every status has a transition entry', () => {
 
 test('terminal states have no outgoing edges, and non-terminal states have at least one', () => {
   for (const s of ORDER_STATUSES) {
-    if (TERMINAL_STATUSES.has(s)) {
+    if (terminalStatuses().has(s)) {
       assert.equal(ALLOWED_TRANSITIONS[s].length, 0, `${s} is terminal but has edges`);
     } else {
       assert.ok(ALLOWED_TRANSITIONS[s].length > 0, `${s} is a dead end but not terminal`);
