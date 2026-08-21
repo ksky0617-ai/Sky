@@ -17,6 +17,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { extractSection, renderMarkdown } from './markdown.ts';
+import { renderProductBody } from './product-page.ts';
+import { Catalog, type ProductRevision } from '../catalog/catalog.ts';
 
 export interface Route {
   /** URL path. */
@@ -165,7 +167,7 @@ function naturePage(): Route {
     title: 'Nature',
     description: 'Four Atlases — river, stone, forest and light — and the design rules drawn from them.',
     body,
-    nav: { label: 'Nature', order: 2 },
+    nav: { label: 'Nature', order: 3 },
   };
 }
 
@@ -185,7 +187,7 @@ function philosophyPage(): Route {
     title: 'Philosophy',
     description: 'Why Olibana derives form from measured natural structure rather than from reference.',
     body,
-    nav: { label: 'Philosophy', order: 3 },
+    nav: { label: 'Philosophy', order: 4 },
   };
 }
 
@@ -206,7 +208,7 @@ function designLanguagePage(): Route {
     title: 'Design Language',
     description: 'The rules Olibana designs by, and the criteria every piece is evaluated against.',
     body,
-    nav: { label: 'Design Language', order: 4 },
+    nav: { label: 'Design Language', order: 5 },
   };
 }
 
@@ -265,15 +267,62 @@ function notFoundPage(): Route {
   };
 }
 
+function productSlug(product: ProductRevision): string {
+  return product.code.toLowerCase();
+}
+
+function productPage(product: ProductRevision): Route {
+  return {
+    path: `/products/${productSlug(product)}`,
+    file: `products/${productSlug(product)}/index.html`,
+    title: product.name,
+    description: product.summary,
+    body: renderProductBody(product),
+  };
+}
+
+function shopPage(products: readonly ProductRevision[]): Route {
+  return {
+    path: '/shop',
+    file: 'shop/index.html',
+    title: 'Shop',
+    description: 'Garments currently offered by Olibana.',
+    body: [
+      '<h1>Shop</h1>',
+      '<ul class="index">',
+      products
+        .map(
+          (p) =>
+            `<li><a href="/products/${productSlug(p)}"><span class="index-title">${p.name}</span>` +
+            `<span class="index-note">${p.summary}</span></a></li>`,
+        )
+        .join(''),
+      '</ul>',
+    ].join('\n'),
+    nav: { label: 'Shop', order: 2 },
+  };
+}
+
+/** Default catalogue location. Absent until a product is recorded. */
+export const CATALOG_PATH = resolve(ROOT, 'data/catalog.jsonl');
+
 /**
  * Routes that exist because their content exists.
  *
- * Absent on purpose: /journal (no article written), /contact (no address),
- * /shop and /products (no product). Each appears when its content does.
+ * Commerce routes are generated from the catalogue, not hand-listed. With an
+ * empty catalogue no /shop and no /products/* are emitted — which is the
+ * current state, and the reason the mechanism is verified against a temporary
+ * catalogue in tests rather than by publishing a product that does not exist.
+ *
+ * Also absent: /journal (no article written), /contact (no address).
  */
-export function buildRoutes(): readonly Route[] {
+export function buildRoutes(catalogPath: string = CATALOG_PATH): readonly Route[] {
+  const published = new Catalog(catalogPath).published();
+
   return [
     homePage(),
+    ...(published.length > 0 ? [shopPage(published)] : []),
+    ...published.map(productPage),
     naturePage(),
     ...ATLASES.map(atlasPage),
     philosophyPage(),

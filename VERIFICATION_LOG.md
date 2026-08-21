@@ -9,6 +9,24 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-15-009 · V1 + V2 + V3 + V4 · Product catalogue and product page
+
+| | |
+| --- | --- |
+| **Target** | `src/catalog/catalog.ts`, `src/site/product-page.ts`, catalogue-driven routing |
+| **Why** | The site rendered from hard-coded strings. The directive's completion contract requires UI → logic → data → persistence to actually connect, and explicitly refuses to count a UI that works only on mock data. |
+| **Method** | V1 unit · V2 against a real filesystem catalogue · **V3 real-browser rendering of a product page built from recorded data** · V4 mutation |
+| **The honesty constraint** | **No product exists.** A fixture would be a fabricated product, which every directive prohibits. So the mechanism is verified against a temporary catalogue in tests and in one browser run, while the real build emits **no `/shop` and no `/products/*`** — asserted directly by a test that reads the repository's own catalogue path. |
+| **Observed** | 111/111 pass. Real build: 10 routes, no commerce pages. Fixture build: 12 routes including `/shop` and `/products/olb-ct-001`. Rendered in Chromium at 1280×1000 and 390×844 — 696 characters visible, no overflow, nothing at opacity 0, price above the natural rule, and an unmeasured size showing an em dash rather than a number. |
+| **Result** | **PASS** |
+| **Integrity rules enforced at write time** | A PUBLISHED product must have a priced variant — a page that asks for a purchase decision while withholding the price is not publishable. A PUBLISHED product must carry a production lead time, because ADR-003 requires the window to be disclosed before payment, so it must exist before the page does. Prices are positive integers in minor units. A measurement is never zero: an unmeasured size is omitted. SKUs must belong to their product and be unique within it. |
+| **Mutations** | M27 publish without a price · M28 publish without a production window · M29 expose DRAFT publicly · M30 fill an unmeasured size with 0 · M31 drop the pre-order disclosure · M32 put the natural rule above the decision layer · M33 emit `/shop` with an empty catalogue — **all 7 caught** (M33 by 4 tests, M29 by 3). |
+| **Design note** | Invalid products are refused *before* the write, unlike order rejections, which are recorded. An attempted order transition is evidence of what a system tried to do; a malformed product is a caller mistake with nothing to preserve. |
+| **Limitation** | No cart, no checkout, no payment: the page states facts and cannot yet take an order. Concurrency still untested. The rendering run used a fixture; no real garment has been photographed, measured, priced, or published. |
+| **Commit** | written against `0ff471e` |
+
+---
+
 ## V-2026-08-15-008 · V1 + V2 + V4 · Order persistence
 
 | | |

@@ -1,6 +1,6 @@
 # STATE — Olibana Resume Entrypoint
 
-**Updated:** 2026-08-15 · **Commit at write time:** `3d9ac19` · **Branch:** `claude/olibana-project-spec-76ivk7`
+**Updated:** 2026-08-15 · **Commit at write time:** `0ff471e` · **Branch:** `claude/olibana-project-spec-76ivk7`
 **Governance:** [`PROTOCOL_LOCK.md`](./PROTOCOL_LOCK.md) (LOCKED)
 
 > Read this file first. Then verify every claim below against actual repository state — **repository state outranks this file** (I-18). This file is a pointer, not an authority.
@@ -15,23 +15,23 @@
 | `BUILD_GATE` | **FALSE** |
 | `COMPLETION_GATE` | **FALSE** |
 | `REFINEMENT_MODE` | FALSE (requires COMPLETION_GATE=TRUE + human approval) |
-| `CURRENT_STATE` / `CURRENT_PHASE` | **A running website plus a persistent order system.** The site builds, serves and renders (browser-verified). Orders persist to an append-only log and survive reload (filesystem-verified). Not connected: payment, product catalogue, shipping. |
-| `CURRENT_CYCLE` | Cycle 8 |
+| `CURRENT_STATE` / `CURRENT_PHASE` | **Website, order persistence and a product catalogue, all data-driven.** Product pages render from recorded data, not hard-coded copy. The real catalogue is empty, so no shop or product page is published — verified, not assumed. Not connected: cart, checkout, payment, shipping. |
+| `CURRENT_CYCLE` | Cycle 9 |
 | `CURRENT_CRITICAL_PATH` | ~~품목 결정~~ ✅ → **실측·사양 기입 → 견적 발송** → 원가 → 가격 → minimum_quantity → pre-order |
 | `LAST_VERIFIED_STATE` | Green on `npm run verify`. **Figures are not restated here** — they went stale in three consecutive cycles because they were copied into prose. `VERIFICATION_LOG.md` is the single source; run the command for the current count. Highest tier reached: **V3** (website, real browser) and **V2** (order persistence, real filesystem). |
 | `OPEN_BLOCKERS` | **6 × P0** (P0-1 closed by ADR-005), 7 × P1 — see [`RISK_REGISTER.md`](./RISK_REGISTER.md) and §4 below |
 | `CURRENT_BLOCKER` | **P0-2** — supplier quotation. Not a decision: awaits the user filling `05_OUTERWEAR_SPEC_PACK.md`. No autonomous action can advance it. |
-| `LAST_FAILED_STATE` | None outstanding. Cycle 8: redelivered webhooks were processed twice because the spec's four-part idempotency key cannot match once the order has advanced — diagnosed, corrected, recorded as ADR-008, re-verified. Cycle 7's five defects are in `VERIFICATION_LOG.md`. |
+| `LAST_FAILED_STATE` | None outstanding. Cycle 9 had no implementation failure. Cycle 8: redelivered webhooks were processed twice because the spec's four-part idempotency key cannot match once the order has advanced — diagnosed, corrected, recorded as ADR-008, re-verified. Cycle 7's five defects are in `VERIFICATION_LOG.md`. |
 | `ACTIVE_DECISIONS` | ADR-001…008, index at `docs/adr/README.md`. **Open:** ADR-006 (brand direction, non-blocking). |
-| `DEFERRED_ITEMS` | Payment integration · product catalogue · shipping · Pinterest · analytics · AI/learning loop — none started. No longer deferred: website (cycle 7), order persistence (cycle 8). |
-| `LAST_VERIFICATION` | V-2026-08-15-008 — see `VERIFICATION_LOG.md` |
+| `DEFERRED_ITEMS` | Cart · checkout · payment · shipping · Pinterest · analytics · AI/learning loop — none started. No longer deferred: website (7), order persistence (8), product catalogue (9). |
+| `LAST_VERIFICATION` | V-2026-08-15-009 — see `VERIFICATION_LOG.md` |
 | `RECOVERY_INSTRUCTIONS` | `npm run verify` must pass (builds the site, then runs the suite). If it does not, the last verified state does not hold: read `VERIFICATION_LOG.md`, re-run, and treat any prior VERIFIED claim as invalidated until re-established. No database, no external service, and no secret is required to reach a working state — `git clone` plus Node ≥22.6 is sufficient. |
-| `RECENT_CHANGE` | **Cycle 8: order persistence.** `src/order/store.ts` — append-only log, state derived by replay, store-enforced idempotency; ADR-008. **Cycle 7: the website.** `src/site/*` (markdown renderer, design tokens, route manifest, layout, builder), 10 routes, `scripts/render-check.mjs`. **Cycle 6:** independent spec-conformance verifier; terminality derived rather than duplicated; `VERIFICATION_LOG.md`. **Cycle 5:** `src/identity/ids.ts`, `src/economics/break-even.ts` + tests. Cycle 4: first code — order state machine, ADR-007. Cycle 3: ADR-005/006, `05_OUTERWEAR_SPEC_PACK.md`, HG-R1. Cycle 2: `04_…`. Cycle 1: `PROTOCOL_LOCK.md`, `STATE.md`. Zero runtime dependencies throughout. |
-| `RECENT_VERIFICATION` | V-2026-08-15-008 (V1+V2+V4) — persistence verified against a real filesystem; 6 mutations all caught; **the spec's idempotency key proved vacuous in a store** and was corrected under ADR-008. Full history: `VERIFICATION_LOG.md`. |
+| `RECENT_CHANGE` | **Cycle 9: product catalogue.** `src/catalog/catalog.ts` (append-only, integrity enforced at write), `src/site/product-page.ts`, catalogue-driven routing. **Cycle 8: order persistence.** `src/order/store.ts` — append-only log, state derived by replay, store-enforced idempotency; ADR-008. **Cycle 7: the website.** `src/site/*` (markdown renderer, design tokens, route manifest, layout, builder), 10 routes, `scripts/render-check.mjs`. **Cycle 6:** independent spec-conformance verifier; terminality derived rather than duplicated; `VERIFICATION_LOG.md`. **Cycle 5:** `src/identity/ids.ts`, `src/economics/break-even.ts` + tests. Cycle 4: first code — order state machine, ADR-007. Cycle 3: ADR-005/006, `05_OUTERWEAR_SPEC_PACK.md`, HG-R1. Cycle 2: `04_…`. Cycle 1: `PROTOCOL_LOCK.md`, `STATE.md`. Zero runtime dependencies throughout. |
+| `RECENT_VERIFICATION` | V-2026-08-15-009 (V1+V2+V3+V4) — catalogue and product page; 7 mutations all caught; a test asserts the **real** build publishes no product, so the honesty property cannot drift silently. Full history: `VERIFICATION_LOG.md`. |
 | `CURRENT_RISKS` | 16 recorded, 0 resolved. Dominant: no supplier (R-01), unit economics unknown (R-03), fabricated-claim risk (R-08) |
 | `PENDING_HUMAN_DECISIONS` | HG-2026-001 **RESOLVED** (ADR-005). Open: **ADR-006 brand-direction conflict** (non-blocking, required before design spec); **P0-7 legal entity** (HG-04, required before payment). |
 | `NEXT_ACTION_1` | **User (parallel, unblocked):** fill `05_OUTERWEAR_SPEC_PACK.md` A–D → dispatch per §E |
-| `NEXT_ACTION_2` (`NEXT_ACTIONS`) | **Autonomous:** product catalogue backed by the same append-only discipline, so a product page can render from data rather than from hard-coded copy |
+| `NEXT_ACTION_2` (`NEXT_ACTIONS`) | **Autonomous:** pre-order run — bind a product to a `PreorderRun` with a minimum quantity, so the page can state the window and the state machine's guard has a real source |
 | `NEXT_ACTION_3` | **Autonomous:** deploy the site to Cloudflare Pages — the only obstacle is the palette guard, which is intended and clears when measurement happens |
 | `NEXT_ACTION_4` | **Blocked on quotation:** populate real `PriceTier` data → compute actual `minimumQuantity`. Module is ready and waiting for inputs. |
 | `RELEVANT_FILES` | §7 below |
@@ -60,7 +60,7 @@
 | BG-01 | Contract Integrity | TRUE | Spec conflict found during implementation and recorded as ADR-007 rather than silently resolved |
 | BG-02 | Executability | **TRUE** | `package.json`; `npm test` runs on Node 22 via `--experimental-strip-types`, 0 deps |
 | BG-03 | Testability | **TRUE** | `node:test` suite plus a real-browser render check and a real-filesystem persistence check; the order state machine is additionally checked against the spec document mechanically |
-| BG-04 | Critical Path Coverage | **FALSE** | Website renders; orders persist and replay. Still absent: product catalogue, product page, payment, shipment, analytics. |
+| BG-04 | Critical Path Coverage | **FALSE** | Website renders; orders persist and replay; products are catalogued and render from data. Still absent: cart, checkout, payment, shipment, analytics. |
 | BG-05 | Invariant Protection | **PARTIAL** | Mutation-verified: order transitions, SKU/identifier integrity, UNKNOWN-never-zero, append-only history, redelivery safety across restart. Not protected: availability integrity, concurrent writers. |
 | BG-06 | Reproducibility | **TRUE** | `npm test` re-runs deterministically; the site build is byte-identical across runs (asserted) |
 | BG-07 | Persistence | **TRUE** | This file + `PROTOCOL_LOCK.md` |
@@ -94,8 +94,8 @@ CG-02, CG-03, CG-05, CG-06, CG-09, CG-10, CG-11 all FALSE. CG-08 now TRUE. Not r
 ```
 LATEST:      V-2026-08-15-006 (V1 + V4, independent spec conformance)
 COMMAND:     npm run verify   (build + suite; counts deliberately not restated here)
-MUTATIONS:   26 run to date · 25 caught · 1 survivor root-caused and eliminated
-HIGHEST TIER: V3 website (real browser) · V2 order persistence (real filesystem) · V4 throughout
+MUTATIONS:   33 run to date · 32 caught · 1 survivor root-caused and eliminated
+HIGHEST TIER: V3 website and product page (real browser) · V2 order and catalogue persistence · V4 throughout
 NEVER EXERCISED: concurrency · payment · production boundary · crash durability
 ```
 
@@ -130,7 +130,7 @@ P0-7 — Legal entity and policies            STATUS: OPEN (HG-04)
 | Critical-path execution pack | `docs/business/02_FIRST_GARMENT_EXECUTION.md` |
 | Category decision pack | `docs/business/04_GARMENT_CATEGORY_DECISION_PACK.md` |
 | **Active work item (user)** | `docs/business/05_OUTERWEAR_SPEC_PACK.md` |
-| **Source** | `src/order/` (state machine + **store**), `src/identity/`, `src/economics/`, `src/site/` |
+| **Source** | `src/order/`, `src/catalog/`, `src/identity/`, `src/economics/`, `src/site/` |
 | **Tests** | `test/order/`, `test/identity/`, `test/economics/`, `test/conformance/`, `test/site/` — run `npm test` for the count |
 | **Render check** | `scripts/render-check.mjs` — needs a browser, run deliberately, not in `npm test` |
 | **Verification history** | `VERIFICATION_LOG.md` |

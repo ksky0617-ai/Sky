@@ -194,6 +194,18 @@ th { font-weight: 500; color: var(--content-secondary); }
 .index-title { font-size: var(--text-lg); border-bottom: 1px solid transparent; display: inline-block; }
 .index-note { display: block; color: var(--content-secondary); font-size: var(--text-sm); margin-top: var(--space-2); max-width: var(--measure); }
 
+dl.facts {
+  display: grid; grid-template-columns: max-content 1fr;
+  gap: var(--space-3) var(--space-6);
+  max-width: var(--measure); margin: var(--space-6) 0;
+}
+dl.facts dt { color: var(--content-secondary); font-size: var(--text-sm); }
+dl.facts dd { margin: 0; }
+@media (max-width: 640px) {
+  dl.facts { grid-template-columns: 1fr; gap: var(--space-1) 0; }
+  dl.facts dd { margin-bottom: var(--space-3); }
+}
+
 .state {
   border: 1px solid var(--line-hairline); padding: var(--space-6);
   margin: var(--space-6) 0; max-width: var(--measure); color: var(--content-secondary);
