@@ -1,6 +1,6 @@
 # STATE — Olibana Resume Entrypoint
 
-**Updated:** 2026-08-15 · **Commit at write time:** `a3e405a` · **Branch:** `claude/olibana-project-spec-76ivk7`
+**Updated:** 2026-08-15 · **Commit at write time:** `3d9ac19` · **Branch:** `claude/olibana-project-spec-76ivk7`
 **Governance:** [`PROTOCOL_LOCK.md`](./PROTOCOL_LOCK.md) (LOCKED)
 
 > Read this file first. Then verify every claim below against actual repository state — **repository state outranks this file** (I-18). This file is a pointer, not an authority.
@@ -15,23 +15,23 @@
 | `BUILD_GATE` | **FALSE** |
 | `COMPLETION_GATE` | **FALSE** |
 | `REFINEMENT_MODE` | FALSE (requires COMPLETION_GATE=TRUE + human approval) |
-| `CURRENT_STATE` / `CURRENT_PHASE` | **A running website plus 3 pure commerce modules.** The site builds, serves, and renders — browser-verified. Commerce logic exists but is not connected to persistence or payment. |
-| `CURRENT_CYCLE` | Cycle 7 |
+| `CURRENT_STATE` / `CURRENT_PHASE` | **A running website plus a persistent order system.** The site builds, serves and renders (browser-verified). Orders persist to an append-only log and survive reload (filesystem-verified). Not connected: payment, product catalogue, shipping. |
+| `CURRENT_CYCLE` | Cycle 8 |
 | `CURRENT_CRITICAL_PATH` | ~~품목 결정~~ ✅ → **실측·사양 기입 → 견적 발송** → 원가 → 가격 → minimum_quantity → pre-order |
-| `LAST_VERIFIED_STATE` | **V1 + V3 + V4, 2026-08-15.** `npm test` → **67/67 pass**. Website rendered in Chromium at desktop and mobile: visible content on every page, 0 elements at opacity 0, no overflow, no console errors, first Tab reaches the skip link, 0 bytes JavaScript, 14 KB first view. Earlier basis: **14 mutations run across 3 modules; 13 caught, 1 survived and exposed a real defect** (duplicate terminality encoding) which was fixed at the root rather than tested around; sources restored byte-identical. Verified: order transitions (20 edges, 3 terminal, guards, idempotency) — **additionally checked against the spec document mechanically**; identifiers (ULID sortability, UUIDv4 non-enumerability, round-trips); break-even (UNKNOWN never zero, amortisation, MOQ binding). |
+| `LAST_VERIFIED_STATE` | Green on `npm run verify`. **Figures are not restated here** — they went stale in three consecutive cycles because they were copied into prose. `VERIFICATION_LOG.md` is the single source; run the command for the current count. Highest tier reached: **V3** (website, real browser) and **V2** (order persistence, real filesystem). |
 | `OPEN_BLOCKERS` | **6 × P0** (P0-1 closed by ADR-005), 7 × P1 — see [`RISK_REGISTER.md`](./RISK_REGISTER.md) and §4 below |
 | `CURRENT_BLOCKER` | **P0-2** — supplier quotation. Not a decision: awaits the user filling `05_OUTERWEAR_SPEC_PACK.md`. No autonomous action can advance it. |
-| `LAST_FAILED_STATE` | None outstanding. Cycle 7: content rendered at opacity 0 behind an entry animation (found by browser, not by tests), a 404 canonical to a non-route, a favicon 404, a duplicated sentence, and a self-inflicted regression that deleted the reduced-motion block — all diagnosed, fixed, re-verified. See `VERIFICATION_LOG.md`. |
-| `ACTIVE_DECISIONS` | ADR-001…007, index at `docs/adr/README.md`. **Open:** ADR-006 (brand direction, non-blocking). |
-| `DEFERRED_ITEMS` | Persistence layer · payment integration · Pinterest · analytics · AI/learning loop — none started. Website is **no longer deferred**: built and rendering (cycle 7). |
-| `LAST_VERIFICATION` | V-2026-08-15-007 — see `VERIFICATION_LOG.md` |
-| `RECOVERY_INSTRUCTIONS` | `npm test` must show 67/67 and `npm run build` must emit 10 routes. If it does not, the last verified state does not hold: read `VERIFICATION_LOG.md`, re-run, and treat any prior VERIFIED claim as invalidated until re-established. No database, no external service, and no secret is required to reach a working state — `git clone` plus Node ≥22.6 is sufficient. |
-| `RECENT_CHANGE` | **Cycle 7: the website.** `src/site/*` (markdown renderer, design tokens, route manifest, layout, builder), 10 routes, `scripts/render-check.mjs`. **Cycle 6:** independent spec-conformance verifier; terminality derived rather than duplicated; `VERIFICATION_LOG.md`. **Cycle 5:** `src/identity/ids.ts`, `src/economics/break-even.ts` + tests. Cycle 4: first code — order state machine, ADR-007. Cycle 3: ADR-005/006, `05_OUTERWEAR_SPEC_PACK.md`, HG-R1. Cycle 2: `04_…`. Cycle 1: `PROTOCOL_LOCK.md`, `STATE.md`. Zero runtime dependencies throughout. |
-| `RECENT_VERIFICATION` | V-2026-08-15-007 (V1+V3+V4) — 67/67 pass; 6 site mutations all caught; **one defect that no unit test could catch was found by rendering the page** (content held at opacity 0 behind an entry animation). Full history: `VERIFICATION_LOG.md`. |
+| `LAST_FAILED_STATE` | None outstanding. Cycle 8: redelivered webhooks were processed twice because the spec's four-part idempotency key cannot match once the order has advanced — diagnosed, corrected, recorded as ADR-008, re-verified. Cycle 7's five defects are in `VERIFICATION_LOG.md`. |
+| `ACTIVE_DECISIONS` | ADR-001…008, index at `docs/adr/README.md`. **Open:** ADR-006 (brand direction, non-blocking). |
+| `DEFERRED_ITEMS` | Payment integration · product catalogue · shipping · Pinterest · analytics · AI/learning loop — none started. No longer deferred: website (cycle 7), order persistence (cycle 8). |
+| `LAST_VERIFICATION` | V-2026-08-15-008 — see `VERIFICATION_LOG.md` |
+| `RECOVERY_INSTRUCTIONS` | `npm run verify` must pass (builds the site, then runs the suite). If it does not, the last verified state does not hold: read `VERIFICATION_LOG.md`, re-run, and treat any prior VERIFIED claim as invalidated until re-established. No database, no external service, and no secret is required to reach a working state — `git clone` plus Node ≥22.6 is sufficient. |
+| `RECENT_CHANGE` | **Cycle 8: order persistence.** `src/order/store.ts` — append-only log, state derived by replay, store-enforced idempotency; ADR-008. **Cycle 7: the website.** `src/site/*` (markdown renderer, design tokens, route manifest, layout, builder), 10 routes, `scripts/render-check.mjs`. **Cycle 6:** independent spec-conformance verifier; terminality derived rather than duplicated; `VERIFICATION_LOG.md`. **Cycle 5:** `src/identity/ids.ts`, `src/economics/break-even.ts` + tests. Cycle 4: first code — order state machine, ADR-007. Cycle 3: ADR-005/006, `05_OUTERWEAR_SPEC_PACK.md`, HG-R1. Cycle 2: `04_…`. Cycle 1: `PROTOCOL_LOCK.md`, `STATE.md`. Zero runtime dependencies throughout. |
+| `RECENT_VERIFICATION` | V-2026-08-15-008 (V1+V2+V4) — persistence verified against a real filesystem; 6 mutations all caught; **the spec's idempotency key proved vacuous in a store** and was corrected under ADR-008. Full history: `VERIFICATION_LOG.md`. |
 | `CURRENT_RISKS` | 16 recorded, 0 resolved. Dominant: no supplier (R-01), unit economics unknown (R-03), fabricated-claim risk (R-08) |
 | `PENDING_HUMAN_DECISIONS` | HG-2026-001 **RESOLVED** (ADR-005). Open: **ADR-006 brand-direction conflict** (non-blocking, required before design spec); **P0-7 legal entity** (HG-04, required before payment). |
 | `NEXT_ACTION_1` | **User (parallel, unblocked):** fill `05_OUTERWEAR_SPEC_PACK.md` A–D → dispatch per §E |
-| `NEXT_ACTION_2` (`NEXT_ACTIONS`) | **Autonomous:** order aggregate binding transitions to identifiers + append-only transition log (pure, no persistence) |
+| `NEXT_ACTION_2` (`NEXT_ACTIONS`) | **Autonomous:** product catalogue backed by the same append-only discipline, so a product page can render from data rather than from hard-coded copy |
 | `NEXT_ACTION_3` | **Autonomous:** deploy the site to Cloudflare Pages — the only obstacle is the palette guard, which is intended and clears when measurement happens |
 | `NEXT_ACTION_4` | **Blocked on quotation:** populate real `PriceTier` data → compute actual `minimumQuantity`. Module is ready and waiting for inputs. |
 | `RELEVANT_FILES` | §7 below |
@@ -41,9 +41,9 @@
 
 | Question | Answer |
 |---|---|
-| **What is complete?** | The specification corpus: brand doctrine, four Atlases (method only), website design system, business loop audit, risk register, ADR-001…007, first-garment execution pack, category decision pack, outerwear spec pack, supplier sourcing, unit-economics calculator. |
-| **What is verified?** | **The website at V3 (renders in a real browser, serves over real HTTP), and three pure modules at V1 + V4 with the order state machine additionally verified against the specification document mechanically:** order transitions (20 edges, 3 terminal, guards, idempotency), identifiers (ULID time-sortable, customer UUIDv4 non-enumerable, SKU/order-number round-trip), break-even (UNKNOWN never zero, amortisation, MOQ binding). 67/67 pass; 20 mutations run, 19 caught, 1 survivor root-caused and eliminated. Everything else remains V0 or unverified. |
-| **What is not verified?** | Product, variant, pre-order run, payment, shipment — all `SPEC_ONLY`. For the website: screen readers, colour contrast (the palette under test is the construction palette), browsers other than Chromium, and Core Web Vitals on a real network. **No persistence, no I/O, no integration, no concurrency verified.** Idempotency is proven against an in-memory key set, not a database constraint. Conformance verifies transcription fidelity, **not that the specification is itself correct**; 4 prose-quantified forbidden rules remain outside machine verification and are disclosed as such. |
+| **What is complete?** | The specification corpus: brand doctrine, four Atlases (method only), website design system, business loop audit, risk register, ADR-001…008, first-garment execution pack, category decision pack, outerwear spec pack, supplier sourcing, unit-economics calculator. |
+| **What is verified?** | **Website at V3** — renders in a real browser, serves over real HTTP. **Order persistence at V2** — append-only log on a real filesystem, state derived by replay, redelivery safe across restart. **Pure modules at V1+V4** — order transitions (also checked mechanically against the spec document), identifiers, break-even. Counts and mutation results: `VERIFICATION_LOG.md`. Everything else remains V0 or unverified. |
+| **What is not verified?** | Product, variant, pre-order run, payment, shipment — all `SPEC_ONLY`. **No concurrency has ever been tested**: the store is single-writer, and two processes could both pass the idempotency check before either writes. Crash-during-write durability untested. For the website: screen readers, colour contrast (the palette under test is the construction palette), browsers other than Chromium, Core Web Vitals on a real network. Conformance verifies transcription fidelity, **not that the specification is itself correct**; 4 prose-quantified forbidden rules sit outside machine verification and are disclosed as such. |
 | **What is blocked?** | Nothing autonomous. The commerce path awaits the user's spec fill → quotation; implementation continues in parallel on pure, spec-determined modules. |
 | **Why is it blocked?** | Category resolved (ADR-005: Outerwear). The build now waits on cost and price, which wait on a quotation, which waits on the spec pack being filled. No decision is outstanding on this path. |
 | **What is the current critical path?** | ~~품목~~ ✅ → **실측·사양 기입 → 견적 발송** → 원가 → 가격 → `PreorderRun.minimum_quantity` → pre-order open |
@@ -59,12 +59,12 @@
 |---|---|:---:|---|
 | BG-01 | Contract Integrity | TRUE | Spec conflict found during implementation and recorded as ADR-007 rather than silently resolved |
 | BG-02 | Executability | **TRUE** | `package.json`; `npm test` runs on Node 22 via `--experimental-strip-types`, 0 deps |
-| BG-03 | Testability | **TRUE** | `node:test`, 67 assertions; order state machine checked against the spec document mechanically; site additionally verified in a real browser |
-| BG-04 | Critical Path Coverage | **FALSE** | A public website now exists and renders. Order transitions, identity and economics primitives exist. Still absent: product, product page, payment, persistence, shipment, analytics. |
-| BG-05 | Invariant Protection | **PARTIAL** | Mutation-verified: order transitions, SKU/identifier integrity, UNKNOWN-never-zero. Terminality now has a single encoding (duplicate removed in cycle 6). Not protected: availability integrity, price/order consistency across persistence. |
+| BG-03 | Testability | **TRUE** | `node:test` suite plus a real-browser render check and a real-filesystem persistence check; the order state machine is additionally checked against the spec document mechanically |
+| BG-04 | Critical Path Coverage | **FALSE** | Website renders; orders persist and replay. Still absent: product catalogue, product page, payment, shipment, analytics. |
+| BG-05 | Invariant Protection | **PARTIAL** | Mutation-verified: order transitions, SKU/identifier integrity, UNKNOWN-never-zero, append-only history, redelivery safety across restart. Not protected: availability integrity, concurrent writers. |
 | BG-06 | Reproducibility | **TRUE** | `npm test` re-runs deterministically; the site build is byte-identical across runs (asserted) |
 | BG-07 | Persistence | **TRUE** | This file + `PROTOCOL_LOCK.md` |
-| BG-08 | Failure Handling | **PARTIAL** | Order rejection paths implemented, recorded, and tested. Payment, production, and shipping recovery unimplemented. |
+| BG-08 | Failure Handling | **PARTIAL** | Order rejection paths implemented, persisted and tested; a corrupt log fails loudly rather than losing history. Payment, production and shipping recovery unimplemented; crash-during-write untested. |
 | BG-09 | Security Boundary | UNVERIFIED | No system exists; attack surface is 0 but untested |
 | BG-10 | No Critical Blocker | **FALSE** | 6 open P0 (P0-1 closed) |
 
@@ -93,10 +93,10 @@ CG-02, CG-03, CG-05, CG-06, CG-09, CG-10, CG-11 all FALSE. CG-08 now TRUE. Not r
 
 ```
 LATEST:      V-2026-08-15-006 (V1 + V4, independent spec conformance)
-SUITE:       67/67 pass  ·  `npm run build` emits 10 routes, 44 KB, 0 JS
-MUTATIONS:   20 run to date · 19 caught · 1 survivor root-caused and eliminated
-HIGHEST TIER REACHED: V3 for the website (real browser, real HTTP). V4 throughout.
-NEVER EXERCISED: persistence · concurrency · payment · production boundary
+COMMAND:     npm run verify   (build + suite; counts deliberately not restated here)
+MUTATIONS:   26 run to date · 25 caught · 1 survivor root-caused and eliminated
+HIGHEST TIER: V3 website (real browser) · V2 order persistence (real filesystem) · V4 throughout
+NEVER EXERCISED: concurrency · payment · production boundary · crash durability
 ```
 
 **Standing caveat.** Conformance verifies that the implementation matches the specification document. It does not verify that the specification is correct, and 4 prose-quantified forbidden rules sit outside machine verification — disclosed by an assertion in `test/conformance/`, not assumed covered.
@@ -130,8 +130,8 @@ P0-7 — Legal entity and policies            STATUS: OPEN (HG-04)
 | Critical-path execution pack | `docs/business/02_FIRST_GARMENT_EXECUTION.md` |
 | Category decision pack | `docs/business/04_GARMENT_CATEGORY_DECISION_PACK.md` |
 | **Active work item (user)** | `docs/business/05_OUTERWEAR_SPEC_PACK.md` |
-| **Source** | `src/order/`, `src/identity/`, `src/economics/`, **`src/site/`** |
-| **Tests** | `test/order/`, `test/identity/`, `test/economics/`, `test/conformance/`, **`test/site/`** — 67 assertions |
+| **Source** | `src/order/` (state machine + **store**), `src/identity/`, `src/economics/`, `src/site/` |
+| **Tests** | `test/order/`, `test/identity/`, `test/economics/`, `test/conformance/`, `test/site/` — run `npm test` for the count |
 | **Render check** | `scripts/render-check.mjs` — needs a browser, run deliberately, not in `npm test` |
 | **Verification history** | `VERIFICATION_LOG.md` |
 | Supplier routes | `docs/business/03_SUPPLIER_SOURCING.md` |

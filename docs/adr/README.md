@@ -13,3 +13,4 @@ Each record states Context, Problem, Options, Decision, Reason, Trade-offs, and 
 | [ADR-005](./ADR-005-garment-category.md) | First garment category — Outerwear | Accepted | 2026-08-15 |
 | [ADR-006](./ADR-006-brand-direction-conflict.md) | Brand direction conflict: Vintage × Luxury × Y2K | **OPEN — conflict reported** | 2026-08-15 |
 | [ADR-007](./ADR-007-spec-conflict-cancelled-terminal.md) | Spec conflict — CANCELLED is not terminal | Accepted | 2026-08-15 |
+| [ADR-008](./ADR-008-idempotency-key-scope.md) | Idempotency key scope in a persistent store | Accepted | 2026-08-15 |

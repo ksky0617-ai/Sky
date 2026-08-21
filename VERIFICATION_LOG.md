@@ -5,7 +5,24 @@
 
 Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` adversarial/mutation · `V5` regression · `V6` production-boundary.
 
-> **V3 reached for the website only** (real browser, real HTTP). Persistence, payment, and the production boundary remain unexercised; every commerce claim stays at V1 or below.
+> **V3 reached for the website** (real browser, real HTTP). **V2 reached for order persistence** (real filesystem, reload across instances). Payment and the production boundary remain unexercised, and no concurrency has ever been tested.
+
+---
+
+## V-2026-08-15-008 · V1 + V2 + V4 · Order persistence
+
+| | |
+| --- | --- |
+| **Target** | `src/order/store.ts` — append-only order log |
+| **Why** | Persistence was the standing limitation on every commerce entry in this file. It is fully specified, depends on no pending input, and was the only thing keeping order handling at V1. |
+| **Method** | V1 unit · **V2 integration against a real filesystem**, including reload through a separate store instance over the same file · V4 mutation |
+| **Observed** | 87/87 pass. Create → persist → read → reload → identical state. Status is derived by replay and never stored, so no second encoding exists to drift. Earlier bytes are never rewritten. The store exposes no update, delete, remove, set, patch, truncate or clear. A full pre-order lifecycle and the undersubscribed branch both persist and replay. 50 events, 50 distinct well-formed ids. A corrupt line throws rather than being skipped. |
+| **Result** | **PASS** |
+| **Mutations** | M21 mutable status field stored beside the log · M22 rejected events dropped · M23 rejected events allowed to advance state · M24 corrupt line silently skipped · M25 ADR-008 fix reverted · M26 append replaced with truncating write — **all 6 caught** (M26 by 9 tests, M25 by 4). |
+| **Defect found on first run** | Two tests failed. Transcribing the spec's idempotency key literally — `(order_id, from_status, to_status, idempotency_key)` — does not work in a store, because the store derives `from` from its own log. Once the first delivery is applied the current `from` has moved, so the recomputed key can never match the stored record, and **a redelivered webhook is processed a second time**. The four-tuple is correct for the pure function, where `from` is an input, and vacuous for the store. Redelivery identity is now `(orderId, idempotencyKey)`; a key reused for a different destination is rejected and recorded rather than honoured. Recorded as ADR-008 rather than resolved silently. |
+| **Limitation closed** | Idempotency was previously proven only against an in-memory key set, which cannot survive a process restart. It is now proven against the store's own history, and a test asserts a fresh instance still detects the redelivery. |
+| **Limitation remaining** | **Single writer only, and unverified.** `appendFileSync` will not corrupt a line, but two processes can both pass the idempotency check before either writes. No concurrency test exists. Before a second writer exists this needs a lock or a store with a real unique constraint. Also unverified: crash-during-write durability, and behaviour when the disk is full. |
+| **Commit** | written against `3d9ac19` |
 
 ---
 
@@ -84,7 +101,7 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 ## Standing limitations across all entries
 
 ```
-Never exercised:  persistence · concurrency · payment · production boundary
+Never exercised:  concurrency · payment · production boundary · crash durability
 Never verified:   that the specification is correct
                   that a factory accepts the spec pack
                   that a real payment succeeds
