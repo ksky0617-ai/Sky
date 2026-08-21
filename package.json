@@ -3,10 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Olibana — pre-order commerce system. See STATE.md for current state.",
-  "engines": { "node": ">=22.6.0" },
+  "description": "Olibana \u2014 pre-order commerce system. See STATE.md for current state.",
+  "engines": {
+    "node": ">=22.6.0"
+  },
   "scripts": {
+    "build": "node --experimental-strip-types src/site/build.ts",
+    "build:production": "node --experimental-strip-types src/site/build.ts --production",
     "test": "node --experimental-strip-types --test test/**/*.test.ts",
-    "typecheck": "echo 'typecheck: no compiler installed; strip-types runs without checking. See STATE.md BG-01.' && exit 0"
+    "verify": "npm run build && npm test"
   }
 }

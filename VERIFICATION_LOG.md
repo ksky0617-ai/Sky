@@ -5,7 +5,25 @@
 
 Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` adversarial/mutation · `V5` regression · `V6` production-boundary.
 
-> **Nothing here reaches V2 or above.** No persistence, no I/O, no integration, and no production boundary has ever been exercised in this repository.
+> **V3 reached for the website only** (real browser, real HTTP). Persistence, payment, and the production boundary remain unexercised; every commerce claim stays at V1 or below.
+
+---
+
+## V-2026-08-15-007 · V1 + V3 + V4 · Website
+
+| | |
+| --- | --- |
+| **Target** | `src/site/*` — static site builder and the 10 routes it emits |
+| **Method** | V1 unit (67 assertions) · **V3 real-browser rendering** (Chromium via playwright-core, run deliberately, not part of `npm test`) · V4 mutation |
+| **Observed** | Build emits 13 files / 10 routes / 44 KB. Served over HTTP: every route 200, unknown paths serve the 404 document. Rendered in Chromium at 1280×900 and 390×844: all pages show visible content (1,400–3,400 characters), 0 children at opacity 0, no horizontal overflow, no console errors, first Tab lands on the skip link. First view 14 KB total, 0 bytes of JavaScript. |
+| **Result** | **PASS** |
+| **Mutations** | M15 script tag shipped · M16 skip link removed · M17 empty `/journal` route built · M18 empty measurements table rendered · M19 reduced-motion block dropped · M20 production palette guard disabled — **all 6 caught.** |
+| **Defect the unit tests could NOT catch** | The page rendered near-blank. `.enter > *` used `animation-fill-mode: both`, which holds each element at its FROM state — opacity 0 — through its stagger delay. The unit test asserted that `both` was present and reasoned that the final state was therefore the resting state. That reasoning was wrong, and the test shared it. **Only the browser screenshot exposed it.** This is the third occasion on which verification shared the implementation's failure mode; unlike the previous two, no amount of reading the code would have shown it. Content entry animation is now removed entirely — it gated comprehension, which ADR-001's C1 resolution forbids — and the test was replaced with the property that matters: no rule starts content at opacity 0. |
+| **Other defects found and fixed** | 404 page declared a canonical URL to a path that is not a route, contradicting its own `noindex` (found by an internal-link check). Every page triggered a `/favicon.ico` 404; suppressed with an empty data URI rather than by inventing a brand mark that has not been decided. Home page stated the same sentence twice — a hand-written statement duplicating the opening line of the philosophy text below it; replaced with Brand Bible language and a repeated-sentence test added. |
+| **Regression introduced and repaired mid-cycle** | An edit removing the entry animation also deleted the `prefers-reduced-motion` block. Caught by the suite, restored. |
+| **Production build** | **Refuses, exit 1**, listing all six construction palette tokens. This is the intended state: the brand palette is deferred pending field measurement, and the guard prevents an unfinished palette shipping by accident. |
+| **Limitation** | No screen-reader testing. No automated contrast validation — and the palette under test is the construction palette, not the brand palette, so contrast figures would be meaningless. Rendering verified in Chromium only. No Core Web Vitals measured against a real network. |
+| **Commit** | written against `a3e405a` |
 
 ---
 
@@ -66,11 +84,12 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 ## Standing limitations across all entries
 
 ```
-Never exercised:  persistence · I/O · network · concurrency · payment · production boundary
+Never exercised:  persistence · concurrency · payment · production boundary
 Never verified:   that the specification is correct
                   that a factory accepts the spec pack
                   that a real payment succeeds
                   that state survives a process restart
+                  screen-reader behaviour · colour contrast · Core Web Vitals
 ```
 
 Any claim beyond these bounds is unsupported by anything recorded here.
