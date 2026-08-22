@@ -33,6 +33,7 @@
  */
 
 import type { Catalog } from '../catalog/catalog.ts';
+import { newId } from '../identity/ids.ts';
 import {
   assertEmail,
   normaliseEmail,
@@ -42,6 +43,7 @@ import {
 } from '../order/placement.ts';
 import type { OrderPlacement, OrderStore } from '../order/store.ts';
 import type { PreorderRunStore } from '../preorder/run.ts';
+import type { IntentStore } from './intents.ts';
 
 export class CheckoutUnavailable extends Error {}
 
@@ -59,6 +61,11 @@ export interface CheckoutIntent {
   readonly promisedShipBy: string;
   /** Carried through the gateway and back, so the return trip is verifiable. */
   readonly idempotencyKey: string;
+  /**
+   * The token the customer returns with. Minted here, unguessable, and unrelated
+   * to anything they know about themselves — see `OrderPlacement.reference`.
+   */
+  readonly reference: string;
 }
 
 /** What the gateway returns once it has taken payment. */
@@ -98,6 +105,8 @@ export interface CheckoutStores extends PlacementStores {
   readonly catalog: Catalog;
   readonly runs: PreorderRunStore;
   readonly orders: OrderStore;
+  /** Where an agreement is written down before the money moves. */
+  readonly intents: IntentStore;
 }
 
 export interface BeginRequest {
@@ -146,7 +155,7 @@ export function beginCheckout(stores: CheckoutStores, request: BeginRequest): Ch
   const email = normaliseEmail(request.email);
   assertEmail(email);
 
-  return {
+  const intent: CheckoutIntent = {
     productId: product.productId,
     productName: product.name,
     sku: variant.sku,
@@ -158,7 +167,14 @@ export function beginCheckout(stores: CheckoutStores, request: BeginRequest): Ch
     preorderRunId: run.runId,
     promisedShipBy: run.promisedShipBy,
     idempotencyKey: request.idempotencyKey,
+    reference: newId('event'),
   };
+
+  // Written before the customer is sent anywhere. When the gateway posts back,
+  // this is what says what was agreed — not the catalogue, which may have
+  // moved, and not the payload, which is the message being checked.
+  stores.intents.record(intent);
+  return intent;
 }
 
 export type CompletionResult =
@@ -199,6 +215,7 @@ export function completeCheckout(
     quantity: intent.quantity,
     shippingAddress: completed.shippingAddress,
     idempotencyKey: intent.idempotencyKey,
+    reference: intent.reference,
     // What the customer was quoted and paid, not what the catalogue says now.
     agreedUnitPrice: { amount: intent.unitPriceAmount, currency: intent.currency },
     ...(completed.sessionId !== undefined ? { sessionId: completed.sessionId } : {}),

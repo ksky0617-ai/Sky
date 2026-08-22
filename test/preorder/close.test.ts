@@ -84,6 +84,7 @@ function commit(s: Stores, who: string, quantity: number): string {
     quantity,
     shippingAddress: { line1: '1 Test Street', city: 'Kyoto', postalCode: '600-0000', country: 'JP' },
     idempotencyKey: `${who}-place`,
+    reference: `ref-${who}`,
   });
   const orderId = order.orderId;
   s.orders.append({ orderId, to: 'PAID', actor: 'stripe', idempotencyKey: `${orderId}-paid` });

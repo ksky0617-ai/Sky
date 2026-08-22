@@ -93,6 +93,15 @@ export interface OrderPlacement {
   readonly currency: string;
   readonly placedAt: string;
   readonly idempotencyKey: string;
+  /**
+   * The token a customer returns with from the gateway.
+   *
+   * Unguessable and independent of anything the customer knows about
+   * themselves. The idempotency key cannot serve here: it is derived from the
+   * selection and the email, so anyone who knew someone's address could read
+   * their order.
+   */
+  readonly reference: string;
   readonly sessionId?: string;
   readonly signalId?: string;
 }
@@ -204,6 +213,16 @@ export class OrderStore {
 
   placement(orderId: string): OrderPlacement | null {
     return this.placements().find((p) => p.orderId === orderId) ?? null;
+  }
+
+  /**
+   * The order a customer returns from the gateway holding a token for.
+   *
+   * `placeOrder` refuses to record an empty reference, so an empty lookup finds
+   * nothing on its own — the invariant lives at the write, not at every read.
+   */
+  placementByReference(reference: string): OrderPlacement | null {
+    return this.placements().find((p) => p.reference === reference) ?? null;
   }
 
   /**

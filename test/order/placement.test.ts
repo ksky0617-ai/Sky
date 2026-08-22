@@ -89,6 +89,7 @@ const request = (overrides: Partial<PlacementRequest> = {}): PlacementRequest =>
   quantity: 1,
   shippingAddress: { line1: '1 Test Street', city: 'Kyoto', postalCode: '600-0000', country: 'JP' },
   idempotencyKey: 'key-1',
+  reference: `ref-${Math.random().toString(36).slice(2)}`,
   ...overrides,
 });
 
@@ -277,6 +278,17 @@ test('an unusable email is refused', () => {
   for (const email of ['', 'ada', 'ada@', '@example.test', 'a b@example.test']) {
     assert.throws(() => placeOrder(s, request({ email })), OrderRejected);
   }
+});
+
+test('an order with no reference is refused', () => {
+  // Without one the customer cannot reach their confirmation, and an empty
+  // reference would match any lookup that also had nothing to go on.
+  const s = stores();
+  for (const reference of ['', '  ']) {
+    assert.throws(() => placeOrder(s, request({ reference })), OrderRejected);
+  }
+  assert.equal(s.orders.placements().length, 0);
+  assert.equal(s.orders.placementByReference(''), null);
 });
 
 test('a refused order leaves nothing behind', () => {

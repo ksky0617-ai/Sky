@@ -30,6 +30,7 @@ try {
       quantity: 1,
       shippingAddress: { line1: '1 Test Street', city: 'Kyoto', postalCode: '600-0000', country: 'JP' },
       idempotencyKey: key,
+      reference: `ref-${who}-${key}`,
     },
   );
   process.stdout.write(`${result.outcome}:${result.order.number}`);

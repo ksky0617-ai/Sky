@@ -1,6 +1,6 @@
 # STATE — Olibana Resume Entrypoint
 
-**Updated:** 2026-08-22 · **Commit at write time:** `a3bec15` · **Branch:** `claude/olibana-project-spec-76ivk7`
+**Updated:** 2026-08-22 · **Commit at write time:** `83c93e3` · **Branch:** `claude/olibana-project-spec-76ivk7`
 **Governance:** [`PROTOCOL_LOCK.md`](./PROTOCOL_LOCK.md) (LOCKED)
 
 > Read this file first. Then verify every claim below against actual repository state — **repository state outranks this file** (I-18). This file is a pointer, not an authority.
@@ -15,24 +15,24 @@
 | `BUILD_GATE` | **FALSE** |
 | `COMPLETION_GATE` | **FALSE** |
 | `REFINEMENT_MODE` | FALSE (requires COMPLETION_GATE=TRUE + human approval) |
-| `CURRENT_STATE` / `CURRENT_PHASE` | **Website, order persistence, product catalogue and pre-order runs — all data-driven, all multi-process safe.** Product pages render from recorded data and state a run's real dates when one is open. The real catalogue is empty and no run is open, so no shop, product page or window is published — verified against the repository's own paths, not assumed. Not connected: cart, checkout, payment, shipping. |
-| `CURRENT_CYCLE` | Cycle 14 |
+| `CURRENT_STATE` / `CURRENT_PHASE` | **The selection-to-order path is complete and runnable end to end.** Page → form → checkout → gateway boundary → signed webhook → order placed, priced, snapshotted, paid, persisted → confirmation. Exercised over real HTTP in sandbox mode and through the deployment adapter. The real catalogue is empty and no run is open, so nothing is published — verified against the repository's own paths, not assumed. **Not connected: a real payment gateway (Human Gate), shipping.** |
+| `CURRENT_CYCLE` | Cycle 15 |
 | `CURRENT_CRITICAL_PATH` | ~~품목 결정~~ ✅ → **실측·사양 기입 → 견적 발송** → 원가 → 가격 → minimum_quantity → pre-order |
 | `LAST_VERIFIED_STATE` | Green on `npm run verify`. **Figures are not restated here** — they went stale in three consecutive cycles because they were copied into prose. `VERIFICATION_LOG.md` is the single source; run the command for the current count. Highest tier reached: **V3** (website, real browser) and **V2** (persistence across spawned processes, real filesystem). |
 | `OPEN_BLOCKERS` | **6 × P0** (P0-1 closed by ADR-005), 8 × P1 — see [`RISK_REGISTER.md`](./RISK_REGISTER.md) and §4 below |
 | `CURRENT_BLOCKER` | **P0-2** — supplier quotation. Not a decision: awaits the user filling `05_OUTERWEAR_SPEC_PACK.md`. No autonomous action can advance it. |
 | `LAST_FAILED_STATE` | None outstanding. **Cycle 10 confirmed two real defects by measurement** — concurrent writers producing two records for one idempotency key, and a crash mid-write making the whole log unreadable — plus a third found only by testing the fix, and a fourth in the test itself (a concurrency test that passed against a store with no locking at all). All fixed and re-verified. **Cycle 11** found three mutations surviving because the page tests exercised the renderer and not the wiring; two build-level tests closed that. Cycle 9 had no implementation failure. Cycle 8: redelivered webhooks were processed twice because the spec's four-part idempotency key cannot match once the order has advanced — diagnosed, corrected, recorded as ADR-008, re-verified. Cycle 7's five defects are in `VERIFICATION_LOG.md`. |
 | `ACTIVE_DECISIONS` | ADR-001…009, index at `docs/adr/README.md`. **Open:** ADR-006 (brand direction, non-blocking). |
-| `DEFERRED_ITEMS` | HTTP layer · payment gateway · shipping · Pinterest · media cluster · dropshipping · analytics · AI/learning loop — none started. **Cart is not deferred; it is refused (ADR-009).** No longer deferred: website (7), order persistence (8), product catalogue (9), multi-process durability (10), pre-order run (11), order placement (12), checkout boundary (13). |
-| `LAST_VERIFICATION` | V-2026-08-22-013 — see `VERIFICATION_LOG.md` |
+| `DEFERRED_ITEMS` | A live payment gateway (Human Gate) · shipping · Pinterest · media cluster · dropshipping · analytics · AI/learning loop. **Cart is not deferred; it is refused (ADR-009).** Everything not blocked by a gate is in `POST_COMPLETION_QUEUE.md` with its reason. No longer deferred: website (7), order persistence (8), catalogue (9), durability (10), pre-order run (11), placement (12), checkout boundary (13), HTTP layer (14), payment boundary and deployment adapter (15). |
+| `LAST_VERIFICATION` | V-2026-08-22-014 — see `VERIFICATION_LOG.md` |
 | `RECOVERY_INSTRUCTIONS` | `npm run verify` must pass (builds the site, then runs the suite). If it does not, the last verified state does not hold: read `VERIFICATION_LOG.md`, re-run, and treat any prior VERIFIED claim as invalidated until re-established. No database, no external service, and no secret is required to reach a working state — `git clone` plus Node ≥22.6 is sufficient. |
-| `RECENT_CHANGE` | **Cycle 14: the HTTP layer.** `src/http/router.ts` (Fetch API, no framework), `scripts/serve.mjs` now mounts it, so the funnel is runnable rather than only unit-tested. **Cycle 13: checkout boundary and visual audit.** `src/checkout/checkout.ts` (payment boundary as an interface; the unconfigured gateway refuses rather than pretending), the purchase form on the product page, `scripts/visual-check.mjs`, ADR-009. **Cycle 12: order placement.** `src/order/placement.ts`; orders, customers, price and SKU snapshots. **Cycle 11: pre-order run.** `src/preorder/run.ts` (append-only; a run cannot open without a break-even quantity, and its terms freeze once it does), `src/preorder/close.ts` (the close outcome is derived from counted commitments, never chosen), `OrderStore.committedUnits`, run-aware product page. **Cycle 10: multi-process durability.** `src/persistence/append-log.ts` — lockfile mutual exclusion and crash-tolerant reads, shared by the order log and the catalogue. **Cycle 9: product catalogue.** `src/catalog/catalog.ts` (append-only, integrity enforced at write), `src/site/product-page.ts`, catalogue-driven routing. **Cycle 8: order persistence.** `src/order/store.ts` — append-only log, state derived by replay, store-enforced idempotency; ADR-008. **Cycle 7: the website.** `src/site/*` (markdown renderer, design tokens, route manifest, layout, builder), 10 routes, `scripts/render-check.mjs`. **Cycle 6:** independent spec-conformance verifier; terminality derived rather than duplicated; `VERIFICATION_LOG.md`. **Cycle 5:** `src/identity/ids.ts`, `src/economics/break-even.ts` + tests. Cycle 4: first code — order state machine, ADR-007. Cycle 3: ADR-005/006, `05_OUTERWEAR_SPEC_PACK.md`, HG-R1. Cycle 2: `04_…`. Cycle 1: `PROTOCOL_LOCK.md`, `STATE.md`. Zero runtime dependencies throughout. |
-| `RECENT_VERIFICATION` | V-2026-08-15-011 (V1+V2+V4+V5) — pre-order run; two logs joined on a real filesystem; mutations pinned in **both** directions, so the terms-freeze rule cannot be over-applied either. A test asserts the **real** repository has no open run, alongside the existing one asserting it publishes no product. Full history: `VERIFICATION_LOG.md`. |
+| `RECENT_CHANGE` | **Cycle 15: the payment boundary, isolated rather than deferred.** Recorded checkout intents, a real HMAC signature verifier, a sandbox gateway that charges nothing and refuses to exist on a public origin, environment validation with three valid states and nothing between them, the order-confirmation page, and the Cloudflare Pages adapter. **Cycle 14: the HTTP layer.** `src/http/router.ts` (Fetch API, no framework), `scripts/serve.mjs` now mounts it, so the funnel is runnable rather than only unit-tested. **Cycle 13: checkout boundary and visual audit.** `src/checkout/checkout.ts` (payment boundary as an interface; the unconfigured gateway refuses rather than pretending), the purchase form on the product page, `scripts/visual-check.mjs`, ADR-009. **Cycle 12: order placement.** `src/order/placement.ts`; orders, customers, price and SKU snapshots. **Cycle 11: pre-order run.** `src/preorder/run.ts` (append-only; a run cannot open without a break-even quantity, and its terms freeze once it does), `src/preorder/close.ts` (the close outcome is derived from counted commitments, never chosen), `OrderStore.committedUnits`, run-aware product page. **Cycle 10: multi-process durability.** `src/persistence/append-log.ts` — lockfile mutual exclusion and crash-tolerant reads, shared by the order log and the catalogue. **Cycle 9: product catalogue.** `src/catalog/catalog.ts` (append-only, integrity enforced at write), `src/site/product-page.ts`, catalogue-driven routing. **Cycle 8: order persistence.** `src/order/store.ts` — append-only log, state derived by replay, store-enforced idempotency; ADR-008. **Cycle 7: the website.** `src/site/*` (markdown renderer, design tokens, route manifest, layout, builder), 10 routes, `scripts/render-check.mjs`. **Cycle 6:** independent spec-conformance verifier; terminality derived rather than duplicated; `VERIFICATION_LOG.md`. **Cycle 5:** `src/identity/ids.ts`, `src/economics/break-even.ts` + tests. Cycle 4: first code — order state machine, ADR-007. Cycle 3: ADR-005/006, `05_OUTERWEAR_SPEC_PACK.md`, HG-R1. Cycle 2: `04_…`. Cycle 1: `PROTOCOL_LOCK.md`, `STATE.md`. Zero runtime dependencies throughout. |
+| `RECENT_VERIFICATION` | V-2026-08-22-014 (V2+V3+V4+V5) — the whole selection-to-order loop over real HTTP in sandbox mode, and through the deployment adapter driven as Pages drives it. A real HMAC signature verifier, probed as an attacker would. Two tests still assert the **real** repository publishes no product and has no open run. Full history: `VERIFICATION_LOG.md`. |
 | `CURRENT_RISKS` | 17 recorded, 0 resolved. New: R-17 (an acknowledged order lost to power failure — no `fsync`; must close before the first real payment). Dominant: no supplier (R-01), unit economics unknown (R-03), fabricated-claim risk (R-08) |
-| `PENDING_HUMAN_DECISIONS` | HG-2026-001 **RESOLVED** (ADR-005). Open: **ADR-006 brand-direction conflict** (non-blocking, required before design spec); **P0-7 legal entity** (HG-04, required before payment). |
+| `PENDING_HUMAN_DECISIONS` | HG-2026-001 **RESOLVED** (ADR-005). Open: **ADR-006 brand-direction conflict** (non-blocking, required before design spec); **P0-7 legal entity** (HG-04) — now the single gate between this system and taking money, with `ACTIVATION_CHECKLIST` in `src/http/environment.ts` naming every step after it; **deployment credentials**. |
 | `NEXT_ACTION_1` | **User (parallel, unblocked):** fill `05_OUTERWEAR_SPEC_PACK.md` A–D → dispatch per §E |
-| `NEXT_ACTION_2` (`NEXT_ACTIONS`) | **Autonomous:** deployment — a Cloudflare Pages Function that calls `handleRequest`, and the order-confirmation page. The handler is shaped for that runtime but has never run there. |
-| `NEXT_ACTION_3` | **Autonomous:** deploy the site to Cloudflare Pages — the only obstacle is the palette guard, which is intended and clears when measurement happens |
+| `NEXT_ACTION_2` (`NEXT_ACTIONS`) | **Autonomous work on the current Completion Scope is exhausted.** What remains is either a Human Gate (P0-7 legal entity → payment gateway; deployment credentials) or in `POST_COMPLETION_QUEUE.md`. See §31.19: the stop reason is `HUMAN_GATE`, not `COMPLETED`. |
+| `NEXT_ACTION_3` | **Human Gate — deployment credentials.** `functions/[[path]].ts` is written and driven in tests the way Pages drives it, but Cloudflare has never run it. `closed` mode deploys as-is; **`live` cannot run on Pages at all** until the logs move off the filesystem (PCQ-004). |
 | `NEXT_ACTION_4` | **Blocked on quotation:** populate real `PriceTier` data → compute actual `minimumQuantity`. Module is ready and waiting for inputs. |
 | `RELEVANT_FILES` | §7 below |
 | `RESUME_ENTRYPOINT` | This file |
@@ -41,7 +41,7 @@
 
 | Question | Answer |
 |---|---|
-| **What is complete?** | The specification corpus: brand doctrine, four Atlases (method only), website design system, business loop audit, risk register, ADR-001…008, first-garment execution pack, category decision pack, outerwear spec pack, supplier sourcing, unit-economics calculator. |
+| **What is complete?** | The specification corpus (brand doctrine, four Atlases as method only, website design system, business loop audit, risk register, ADR-001…009, execution packs, unit-economics calculator) **and the whole selection-to-order system**: catalogue, pre-order runs, placement, checkout, signature verification, persistence, confirmation, the HTTP layer and the deployment adapter. |
 | **What is verified?** | **Website at V3** — renders in a real browser, serves over real HTTP. **Persistence at V2** — append-only logs on a real filesystem, state derived by replay, redelivery safe across restart, and safe against **concurrent processes and a crash mid-write**, both measured with spawned processes rather than reasoned about. **Pre-order runs at V2** — production is decided by commitments counted from the order log, and the run's terms freeze the moment it opens. **Pure modules at V1+V4** — order transitions (also checked mechanically against the spec document), identifiers, break-even. Counts and mutation results: `VERIFICATION_LOG.md`. Everything else remains V0 or unverified. |
 | **What is not verified?** | Payment execution and shipment. **No payment has ever been executed and none can be**: there is no gateway and no signature verifier, and configuring them needs a legal entity (P0-7, HG-04). The webhook's success path is verified with real files and a test verifier, which proves what is downstream of verification and nothing about any signature. Deployment to Cloudflare Pages Functions is untried. Concurrency and crash-during-write **are now tested with spawned processes** (V-2026-08-15-010): both were confirmed as real defects and fixed. Still unverified: **power-loss durability** — nothing calls `fsync`, so an acknowledged record can sit in the OS page cache when the machine loses power. The write lock is filesystem-scoped and would not hold across machines. For the website: screen readers, colour contrast (the palette under test is the construction palette), browsers other than Chromium, Core Web Vitals on a real network. Conformance verifies transcription fidelity, **not that the specification is itself correct**; 4 prose-quantified forbidden rules sit outside machine verification and are disclosed as such. |
 | **What is blocked?** | Nothing autonomous. The commerce path awaits the user's spec fill → quotation; implementation continues in parallel on pure, spec-determined modules. |
@@ -52,6 +52,72 @@
 | **What human decision is pending?** | None on the critical path. Two off-path: ADR-006 (before design spec), P0-7 (before payment). See §6. |
 
 ## 3. Gate Evaluation — evidence for each FALSE
+
+### Completion Judge — 2026-08-22, cycle 15
+
+§31.9 separates the builder from the judge, and §31.24 gives the logic. Evaluated
+against the **frozen** Completion Scope (§31.1): the SSOT, the approved SPEC, the
+LOCKED ADRs and the existing Gate. Improvements do not appear here; they are in
+[`POST_COMPLETION_QUEUE.md`](./POST_COMPLETION_QUEUE.md), and §31.24 states
+plainly that a non-empty queue is not a reason to withhold completion.
+
+#### CORE
+
+| Criterion | Verdict | Evidence |
+|---|:---:|---|
+| Product / catalogue functional | **VERIFIED** | Append-only, integrity at the write, code uniqueness under contention |
+| Selection-to-order path functional | **VERIFIED** | ADR-009; real HTTP, form → order → confirmation |
+| Checkout functional | **VERIFIED** | `test/checkout/`, `test/http/` |
+| Validation functional | **VERIFIED** | Refusals before payment, negative paths tested |
+| Price invariant verified | **VERIFIED** | Agreement recorded before payment; M68, M72 |
+| Order persistence verified | **VERIFIED** | Reload across instances, one log, no cross-file drift |
+| Idempotency verified | **VERIFIED** | M56, M65; redelivered webhook is a no-op |
+| Concurrency verified | **VERIFIED** | Spawned processes, wall-clock barrier; M34, M40, M55 |
+| Crash durability verified | **VERIFIED** for a killed process. **NOT** for power loss (R-17, PCQ-005) | M35 |
+| Confirmation verified | **VERIFIED** | Unguessable reference; M73 |
+| Accessibility verified | **VERIFIED at the AA target-size and contrast floors** measured | `visual-check.mjs`; M62, M63 |
+| Visual geometry verified | **VERIFIED** | 1280 / 834 / 390, five routes |
+| CSS token integrity verified | **VERIFIED** | `findUndefinedTokens` |
+| Responsive behaviour verified | **VERIFIED** | No overflow, no hidden content, no undersized target |
+| Performance checked | **PARTIAL** | Zero JS shipped and asserted. No LCP/CLS/INP measured — no deployment to measure on |
+| Security checked | **PARTIAL** | Real HMAC verification, replay window, constant-time compare, forged-signature tests. No external review |
+| Error paths checked | **VERIFIED** | 400 / 404 / 405 / 422 / 503, each with a reason a person can read |
+| **Deployment path tested** | **NOT VERIFIED** | Adapter driven as Pages drives it; **Cloudflare has never run it** |
+| Regression suite passes | **VERIFIED** | `npm run verify` green every cycle |
+
+#### HUMAN GATE — isolated, per §31.3
+
+| Item | State |
+|---|---|
+| Legal entity (P0-7) | **HUMAN_GATE.** Every step after it is enumerated in `ACTIVATION_CHECKLIST` |
+| Production payment activation | **HUMAN_GATE.** `UnconfiguredGateway` refuses; `live` mode still refuses to invent a checkout URL |
+| External credentials | **HUMAN_GATE.** Deployment and gateway both |
+| Unsafe irreversible action performed | **NONE.** No payment, no refund, no publication, no external post, no credential obtained |
+
+#### GROWTH
+
+Not started, and correctly so: §22.19 and §31.15 fix the order, and §31.15
+forbids growth from expanding the Core criteria. The repository contains **no**
+prior Pinterest, media-cluster or dropshipping implementation to restore —
+checked, not assumed. Recorded as PCQ-007.
+
+#### VERDICT
+
+```
+COMPLETION = FALSE
+```
+
+By §31.24 this turns on one unmet required criterion: **the deployment path has
+never been executed.** That is `EXTERNAL_DEPENDENCY` (§31.19 F) — credentials —
+not an incomplete implementation.
+
+Two further criteria stand at PARTIAL (performance, security), and both are
+partial *because* nothing is deployed. They resolve with the same act.
+
+**Stop reason: `HUMAN_GATE` (§31.19 B).** Autonomous work inside the frozen
+scope is exhausted: what remains needs a legal entity, a payment account, or
+deployment credentials. Per §31.3 everything up to each of those boundaries is
+built, tested and verified — the remaining act is activation, not construction.
 
 ### Adversarial completion audit — 2026-08-22, cycle 14
 
@@ -118,9 +184,9 @@ CG-02, CG-03, CG-05, CG-06, CG-09, CG-10, CG-11 all FALSE. CG-08 now TRUE. Not r
 **Current headline:**
 
 ```
-LATEST:      V-2026-08-22-013 (V2 + V3 + V4 + V5, the HTTP layer)
+LATEST:      V-2026-08-22-014 (V2 + V3 + V4 + V5, confirmation · sandbox · signature · deployment adapter)
 COMMAND:     npm run verify   (build + suite; counts deliberately not restated here)
-MUTATIONS:   68 run to date · 66 caught · 2 standing survivors, both root-caused and disclosed
+MUTATIONS:   80 run to date · 77 caught · 1 removed at the root · 2 standing survivors, disclosed
              (M47 unreachable defensive branch · M58 equivalent mutant)
 HIGHEST TIER: V3 website and product page (real browser) · V2 multi-process persistence · V4 throughout
 NEVER EXERCISED: payment execution · production boundary · power-loss durability (no fsync)
@@ -157,9 +223,9 @@ P0-7 — Legal entity and policies            STATUS: OPEN (HG-04)
 | Critical-path execution pack | `docs/business/02_FIRST_GARMENT_EXECUTION.md` |
 | Category decision pack | `docs/business/04_GARMENT_CATEGORY_DECISION_PACK.md` |
 | **Active work item (user)** | `docs/business/05_OUTERWEAR_SPEC_PACK.md` |
-| **Source** | `src/order/`, `src/catalog/`, `src/preorder/`, `src/checkout/`, `src/http/`, `src/persistence/`, `src/identity/`, `src/economics/`, `src/site/` |
+| **Source** | `src/order/`, `src/catalog/`, `src/preorder/`, `src/checkout/`, `src/http/`, `src/persistence/`, `src/identity/`, `src/economics/`, `src/site/`, `functions/` |
 | **Tests** | `test/order/`, `test/catalog/`, `test/preorder/`, `test/checkout/`, `test/http/`, `test/persistence/`, `test/identity/`, `test/economics/`, `test/conformance/`, `test/site/` — run `npm test` for the count |
-| **Render check** | `scripts/render-check.mjs` and **`scripts/visual-check.mjs`** (target size, button contrast, three breakpoints) — both need a browser; run deliberately, not in `npm test` |
+| **Render check** | `scripts/render-check.mjs` and **`scripts/visual-check.mjs`** (target size, button contrast, three breakpoints, and the checkout/sandbox/confirmation states) — both need a browser; run deliberately, not in `npm test` |
 | **Durability workers** | `scripts/append-worker.mjs`, `scripts/catalog-worker.mjs`, `scripts/lock-holder.mjs` — spawned by the concurrency tests; not entry points |
 | **Verification history** | `VERIFICATION_LOG.md` |
 | Supplier routes | `docs/business/03_SUPPLIER_SOURCING.md` |

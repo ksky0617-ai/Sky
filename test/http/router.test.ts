@@ -22,6 +22,7 @@ import {
   type PaymentGateway,
 } from '../../src/checkout/checkout.ts';
 import {
+  CONFIRMATION_PATH,
   CHECKOUT_PATH,
   handleRequest,
   submissionKey,
@@ -30,6 +31,8 @@ import {
   type RouterOptions,
   type WebhookVerifier,
 } from '../../src/http/router.ts';
+import { IntentStore } from '../../src/checkout/intents.ts';
+import { HmacWebhookVerifier, signWebhook, type SignedWebhook } from '../../src/checkout/sandbox.ts';
 import { OrderStore } from '../../src/order/store.ts';
 import { PreorderRunStore, type RunInput } from '../../src/preorder/run.ts';
 
@@ -76,7 +79,11 @@ function stores(options: { product?: ProductInput; open?: boolean } = {}): Check
   const runs = new PreorderRunStore(resolve(dir, `runs-${id}.jsonl`));
   runs.record(runInput());
   if (options.open !== false) runs.record(runInput({ status: 'OPEN' }));
-  return { catalog, runs, orders: new OrderStore(resolve(dir, `orders-${id}.jsonl`)) };
+  return {
+    catalog, runs,
+    orders: new OrderStore(resolve(dir, `orders-${id}.jsonl`)),
+    intents: new IntentStore(resolve(dir, `intents-${id}.jsonl`)),
+  };
 }
 
 /** A gateway that records what it was asked to charge, and charges nothing. */
@@ -85,32 +92,6 @@ class RecordingGateway implements PaymentGateway {
   createSession(intent: CheckoutIntent): { url: string } {
     this.seen.push(intent);
     return { url: `https://gateway.test/session/${encodeURIComponent(intent.idempotencyKey)}` };
-  }
-}
-
-/**
- * A verifier that accepts a body it can parse. Stands in for a signature
- * check — what it proves here is that everything downstream of verification is
- * correct, not that any signature was ever validated.
- */
-class TestVerifier implements WebhookVerifier {
-  readonly #source: CheckoutStores;
-  constructor(source: CheckoutStores) { this.#source = source; }
-  verify(body: string): { intent: CheckoutIntent; completed: CompletedCheckout } | null {
-    const parsed = JSON.parse(body) as { begin: Parameters<typeof beginCheckout>[1]; completed: Partial<CompletedCheckout> };
-    const intent = beginCheckout(this.#source, parsed.begin);
-    return {
-      intent,
-      completed: {
-        idempotencyKey: intent.idempotencyKey,
-        providerRef: 'ref_1',
-        email: intent.email,
-        shippingAddress: { line1: '1 Test Street', city: 'Kyoto', postalCode: '600-0000', country: 'JP' },
-        amountPaid: intent.totalAmount,
-        currency: intent.currency,
-        ...parsed.completed,
-      },
-    };
   }
 }
 
@@ -224,87 +205,185 @@ test('a double-clicked form reaches the gateway with one key, not two', async ()
   assert.equal(new Set(gateway.seen.map((i) => i.idempotencyKey)).size, 1);
 });
 
-// --- the webhook ---------------------------------------------------------
+// --- the webhook, with a real signature -----------------------------------
 
-const webhook = (body: unknown): Request =>
-  new Request(`https://olibana.test${WEBHOOK_PATH}`, { method: 'POST', body: JSON.stringify(body) });
+const SECRET = 'a-test-secret-long-enough';
 
-test('an unverified webhook is refused before anything downstream reads it', async () => {
-  // Everything after verification is trusted: the amount, the address, the key.
-  const s = stores();
+/** The payload a gateway posts back, signed the way a gateway signs it. */
+async function signedWebhook(
+  overrides: Partial<SignedWebhook> & Pick<SignedWebhook, 'reference'>,
+  timestamp?: number,
+): Promise<Request> {
+  const payload: SignedWebhook = {
+    providerRef: 'ref_1',
+    email: 'ada@example.test',
+    shippingAddress: { line1: '1 Test Street', city: 'Kyoto', postalCode: '600-0000', country: 'JP' },
+    amountPaid: 72000,
+    currency: 'JPY',
+    ...overrides,
+  };
+  const body = JSON.stringify(payload);
+  return new Request(`https://olibana.test${WEBHOOK_PATH}`, {
+    method: 'POST',
+    headers: { 'x-olibana-signature': await signWebhook(SECRET, body, timestamp) },
+    body,
+  });
+}
+
+/** Runs a checkout so an intent exists, and returns its reference. */
+async function checkedOut(o: RouterOptions, fields = selection): Promise<string> {
+  await handleRequest(o, form(fields));
+  return o.stores.intents.all().at(-1)!.reference;
+}
+
+function signing(overrides: Partial<RouterOptions> = {}): RouterOptions {
+  return options({ gateway: new RecordingGateway(), verifier: new HmacWebhookVerifier(SECRET), ...overrides });
+}
+
+test('an unsigned webhook is refused before anything downstream reads it', async () => {
+  const o = signing();
+  const reference = await checkedOut(o);
   const response = await handleRequest(
-    options({ stores: s }),
-    webhook({ begin: { ...selection, quantity: 1, idempotencyKey: 'k' }, completed: {} }),
+    o,
+    new Request(`https://olibana.test${WEBHOOK_PATH}`, { method: 'POST', body: JSON.stringify({ reference }) }),
   );
   assert.equal(response?.status, 400);
-  assert.equal(await response!.text(), 'unverified');
-  assert.equal(s.orders.placements().length, 0, 'an unverified payload created an order');
+  assert.equal(o.stores.orders.placements().length, 0, 'an unsigned payload created an order');
+});
+
+test('a webhook signed with the wrong secret is refused', async () => {
+  const o = signing();
+  const reference = await checkedOut(o);
+  const body = JSON.stringify({ reference });
+  const response = await handleRequest(o, new Request(`https://olibana.test${WEBHOOK_PATH}`, {
+    method: 'POST',
+    headers: { 'x-olibana-signature': await signWebhook('a-different-secret-x', body) },
+    body,
+  }));
+  assert.equal(response?.status, 400);
+  assert.equal(o.stores.orders.placements().length, 0);
+});
+
+test('a correctly signed but stale webhook is refused, so a captured one cannot be replayed', async () => {
+  const o = signing();
+  const reference = await checkedOut(o);
+  const hourAgo = Math.floor(Date.now() / 1000) - 3600;
+  const response = await handleRequest(o, await signedWebhook({ reference }, hourAgo));
+  assert.equal(response?.status, 400);
+  assert.equal(o.stores.orders.placements().length, 0);
+});
+
+test('a signed webhook for an unknown checkout is refused rather than invented', async () => {
+  const o = signing();
+  await checkedOut(o);
+  const response = await handleRequest(o, await signedWebhook({ reference: 'EVT_nonexistent' }));
+  assert.equal(response?.status, 404);
+  assert.equal(o.stores.orders.placements().length, 0);
 });
 
 test('a verified payment places the order and marks it paid', async () => {
-  const s = stores();
-  const response = await handleRequest(
-    options({ stores: s, verifier: new TestVerifier(s) }),
-    webhook({ begin: { ...selection, quantity: 1, idempotencyKey: submissionKey(new URLSearchParams(selection)) }, completed: {} }),
-  );
+  const o = signing();
+  const reference = await checkedOut(o);
+  const response = await handleRequest(o, await signedWebhook({ reference }));
 
   assert.equal(response?.status, 200);
   assert.match(await response!.text(), /^placed OLB-/);
-  const order = s.orders.placements()[0];
-  assert.equal(s.orders.status(order.orderId), 'PAID');
+  const order = o.stores.orders.placements()[0];
+  assert.equal(o.stores.orders.status(order.orderId), 'PAID');
   assert.equal(order.customer.email, 'ada@example.test');
+  assert.equal(order.reference, reference);
 });
 
 test('a redelivered webhook answers 200 and creates nothing further', async () => {
   // A provider that receives an error redelivers. Redelivering something we
   // recorded is noise; redelivering something we failed to record is the point.
-  const s = stores();
-  const o = options({ stores: s, verifier: new TestVerifier(s) });
-  const body = { begin: { ...selection, quantity: 1, idempotencyKey: submissionKey(new URLSearchParams(selection)) }, completed: {} };
-
-  await handleRequest(o, webhook(body));
-  const second = await handleRequest(o, webhook(body));
+  const o = signing();
+  const reference = await checkedOut(o);
+  await handleRequest(o, await signedWebhook({ reference }));
+  const second = await handleRequest(o, await signedWebhook({ reference }));
 
   assert.equal(second?.status, 200);
   assert.match(await second!.text(), /^duplicate OLB-/);
-  assert.equal(s.orders.placements().length, 1);
+  assert.equal(o.stores.orders.placements().length, 1);
 });
 
-test('a payment for the wrong amount is refused with a status that stops retries', async () => {
-  const s = stores();
-  const response = await handleRequest(
-    options({ stores: s, verifier: new TestVerifier(s) }),
-    webhook({
-      begin: { ...selection, quantity: 1, idempotencyKey: 'k' },
-      completed: { amountPaid: 1 },
-    }),
-  );
-  assert.equal(response?.status, 422, 'a mismatched payment was answered with a retryable status');
+test('the amount comes from the recorded agreement, not from the payload', async () => {
+  // A signed message still must not be able to define what was owed.
+  const o = signing();
+  const reference = await checkedOut(o);
+  const response = await handleRequest(o, await signedWebhook({ reference, amountPaid: 1 }));
+
+  assert.equal(response?.status, 422, 'a payload defined its own price');
   assert.match(await response!.text(), /refused:/);
-  assert.equal(s.orders.placements().length, 0);
+  assert.equal(o.stores.orders.placements().length, 0);
+});
+
+// --- the confirmation page ----------------------------------------------
+
+test('the confirmation page shows the order to whoever holds its reference', async () => {
+  const o = signing();
+  const reference = await checkedOut(o);
+  await handleRequest(o, await signedWebhook({ reference }));
+
+  const response = await handleRequest(
+    o,
+    new Request(`https://olibana.test${CONFIRMATION_PATH}?ref=${reference}`),
+  );
+  const body = await response!.text();
+  assert.equal(response?.status, 200);
+  assert.match(body, /Order OLB-/);
+  assert.match(body, /72,000 JPY/);
+  assert.match(body, /1 December 2026/);
+  assert.match(body, /refunded in full/);
+});
+
+test('a confirmation reference that names nothing shows no one else order', async () => {
+  const o = signing();
+  const reference = await checkedOut(o);
+  await handleRequest(o, await signedWebhook({ reference }));
+
+  for (const ref of ['', 'EVT_guess', reference.slice(0, -1)]) {
+    const response = await handleRequest(
+      o,
+      new Request(`https://olibana.test${CONFIRMATION_PATH}?ref=${ref}`),
+    );
+    const body = await response!.text();
+    assert.equal(response?.status, 202, `${ref || '(empty)'} resolved to an order`);
+    assert.ok(!/OLB-\d/.test(body), 'an order number leaked to a wrong reference');
+  }
+});
+
+test('a customer arriving before the webhook is told the truth, not shown an error', async () => {
+  const o = signing();
+  const reference = await checkedOut(o);
+  const response = await handleRequest(
+    o,
+    new Request(`https://olibana.test${CONFIRMATION_PATH}?ref=${reference}`),
+  );
+  assert.equal(response?.status, 202);
+  assert.match(await response!.text(), /Payment received/);
 });
 
 // --- the whole path ------------------------------------------------------
 
-test('form post to paid order, end to end, on real files', async () => {
-  const s = stores();
-  const gateway = new RecordingGateway();
-  const o = options({ stores: s, gateway, verifier: new TestVerifier(s) });
+test('form post to paid order to confirmation, end to end, on real files', async () => {
+  const o = signing();
+  const reference = await checkedOut(o, { ...selection, quantity: '3' });
 
-  const redirect = await handleRequest(o, form({ ...selection, quantity: '3' }));
-  assert.equal(redirect?.status, 303);
-
-  const intent = gateway.seen[0];
-  const paid = await handleRequest(o, webhook({
-    begin: { productId: intent.productId, sku: intent.sku, quantity: intent.quantity, email: intent.email, idempotencyKey: intent.idempotencyKey },
-    completed: {},
-  }));
+  const paid = await handleRequest(o, await signedWebhook({ reference, amountPaid: 216000 }));
   assert.equal(paid?.status, 200);
 
-  const reloaded = new OrderStore(s.orders.path);
+  const reloaded = new OrderStore(o.stores.orders.path);
   const order = reloaded.placements()[0];
   assert.equal(order.items[0].quantity, 3);
   assert.equal(order.subtotalAmount, 216000);
   assert.equal(reloaded.status(order.orderId), 'PAID');
   assert.equal(reloaded.committedUnits('RUN_test'), 0, 'a paid order counted before being held');
+
+  const confirmed = await handleRequest(
+    o,
+    new Request(`https://olibana.test${CONFIRMATION_PATH}?ref=${reference}`),
+  );
+  assert.equal(confirmed?.status, 200);
+  assert.match(await confirmed!.text(), new RegExp(order.number));
 });

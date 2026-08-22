@@ -21,6 +21,9 @@ import { resolve, extname } from 'node:path';
 
 import { Catalog } from '../src/catalog/catalog.ts';
 import { UnconfiguredGateway } from '../src/checkout/checkout.ts';
+import { IntentStore } from '../src/checkout/intents.ts';
+import { HmacWebhookVerifier, SandboxGateway } from '../src/checkout/sandbox.ts';
+import { validateEnvironment } from '../src/http/environment.ts';
 import { handleRequest, UnconfiguredVerifier } from '../src/http/router.ts';
 import { OrderStore } from '../src/order/store.ts';
 import { PreorderRunStore } from '../src/preorder/run.ts';
@@ -30,15 +33,31 @@ const root = process.argv[2] ?? 'dist';
 const port = Number(process.argv[3] ?? 0);
 const ORDERS_PATH = resolve(import.meta.dirname, '../data/orders.jsonl');
 
-const options = {
-  stores: {
-    catalog: new Catalog(process.env.OLIBANA_CATALOG ?? CATALOG_PATH),
-    runs: new PreorderRunStore(process.env.OLIBANA_RUNS ?? RUNS_PATH),
-    orders: new OrderStore(process.env.OLIBANA_ORDERS ?? ORDERS_PATH),
-  },
-  gateway: new UnconfiguredGateway(),
-  verifier: new UnconfiguredVerifier(),
+// Same validation the deployed function runs. A local server that accepted a
+// configuration the deployment refuses would be testing a different system.
+const configured = validateEnvironment(process.env);
+
+const stores = {
+  catalog: new Catalog(process.env.OLIBANA_CATALOG ?? CATALOG_PATH),
+  runs: new PreorderRunStore(process.env.OLIBANA_RUNS ?? RUNS_PATH),
+  orders: new OrderStore(process.env.OLIBANA_ORDERS ?? ORDERS_PATH),
+  intents: new IntentStore(process.env.OLIBANA_INTENTS ?? resolve(import.meta.dirname, '../data/checkout-intents.jsonl')),
 };
+
+const options = configured.mode === 'sandbox'
+  ? {
+      stores,
+      gateway: new SandboxGateway(true),
+      verifier: new HmacWebhookVerifier(configured.webhookSecret),
+      sandbox: { enabled: true, secret: configured.webhookSecret },
+    }
+  : {
+      stores,
+      gateway: new UnconfiguredGateway(),
+      verifier: configured.mode === 'live'
+        ? new HmacWebhookVerifier(configured.webhookSecret)
+        : new UnconfiguredVerifier(),
+    };
 
 const types = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',

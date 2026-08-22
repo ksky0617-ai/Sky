@@ -50,6 +50,8 @@ export interface PlacementRequest {
   readonly agreedUnitPrice?: { readonly amount: number; readonly currency: string };
   /** Makes a resubmitted form a no-op rather than a second order. */
   readonly idempotencyKey: string;
+  /** The unguessable token the confirmation page is reached by. */
+  readonly reference: string;
   readonly sessionId?: string;
   readonly signalId?: string;
   readonly placedAt?: Date;
@@ -152,6 +154,13 @@ export function placeOrder(
   assertEmail(email);
   assertAddress(request.shippingAddress);
 
+  if (request.reference.trim() === '') {
+    throw new OrderRejected(
+      'an order needs a reference, or the customer has no way to reach their confirmation and ' +
+        'an empty one would match every lookup that also had nothing to go on.',
+    );
+  }
+
   if (!Number.isInteger(request.quantity) || request.quantity <= 0) {
     throw new OrderRejected(`quantity must be a positive whole number, received ${request.quantity}`);
   }
@@ -232,6 +241,7 @@ export function placeOrder(
       currency,
       placedAt: now.toISOString(),
       idempotencyKey: request.idempotencyKey,
+      reference: request.reference,
       ...(request.sessionId !== undefined ? { sessionId: request.sessionId } : {}),
       ...(request.signalId !== undefined ? { signalId: request.signalId } : {}),
     };

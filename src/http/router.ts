@@ -42,14 +42,18 @@ import {
   completeCheckout,
   type CheckoutIntent,
   type CheckoutStores,
-  type CompletedCheckout,
   type PaymentGateway,
 } from '../checkout/checkout.ts';
+import { signWebhook, toCompletedCheckout, type SignedWebhook } from '../checkout/sandbox.ts';
 import { OrderRejected } from '../order/placement.ts';
+import type { OrderPlacement } from '../order/store.ts';
 import { escapeHtml } from '../site/markdown.ts';
+import { formatPrice } from '../site/product-page.ts';
 
 export const CHECKOUT_PATH = '/checkout';
 export const WEBHOOK_PATH = '/webhooks/payment';
+export const CONFIRMATION_PATH = '/order/confirmation';
+export const SANDBOX_PATH = '/sandbox/pay';
 
 /**
  * Verifies that a webhook really came from the gateway.
@@ -60,11 +64,11 @@ export const WEBHOOK_PATH = '/webhooks/payment';
  * skip it — a handler is constructed with one or it is not constructed.
  */
 export interface WebhookVerifier {
-  /** Returns the completed checkout and the intent that produced it, or null. */
-  verify(body: string, headers: Headers): { intent: CheckoutIntent; completed: CompletedCheckout } | null;
+  /** Returns the signed payload, or null for any failure at all. */
+  verify(body: string, headers: Headers): Promise<SignedWebhook | null> | SignedWebhook | null;
 }
 
-/** The verifier until a real gateway exists. It trusts nothing. */
+/** The verifier until a secret exists. It trusts nothing. */
 export class UnconfiguredVerifier implements WebhookVerifier {
   verify(): null {
     return null;
@@ -75,6 +79,12 @@ export interface RouterOptions {
   readonly stores: CheckoutStores;
   readonly gateway: PaymentGateway;
   readonly verifier: WebhookVerifier;
+  /**
+   * Enables the sandbox payment page, which records paid orders that nobody
+   * paid for. Absent means off. There is no way to switch it on by accident,
+   * and `validateEnvironment` refuses a production configuration that sets it.
+   */
+  readonly sandbox?: { readonly enabled: true; readonly secret: string };
 }
 
 function page(status: number, title: string, body: string): Response {
@@ -87,11 +97,24 @@ function page(status: number, title: string, body: string): Response {
 <title>${escapeHtml(title)} — Olibana</title>
 <link rel="icon" href="data:,">
 <style>
+  /* Deliberately minimal, and deliberately not exempt from the floors the rest
+     of the site meets. These pages are rendered by the router rather than the
+     build, so they were outside the visual check until the check was extended
+     to them — at which point every control on them was under the WCAG 2.2 AA
+     24px target minimum. A page a customer reaches after paying is not a place
+     to relax an accessibility floor. */
   :root { color-scheme: light dark; }
   body { font: 16px/1.6 system-ui, sans-serif; margin: 0; padding: 3rem 1.5rem; max-width: 34rem; }
   h1 { font-size: 1.4rem; font-weight: 500; letter-spacing: 0.02em; }
   p { margin: 1rem 0; }
-  a { color: inherit; }
+  ul { padding-left: 1.2rem; }
+  a { color: inherit; display: inline-block; padding: 3px 0; }
+  label { display: block; margin-bottom: 0.3rem; }
+  input { width: 100%; min-height: 44px; box-sizing: border-box; padding: 0.5rem; font: inherit; }
+  button {
+    min-height: 44px; padding: 0.6rem 1.5rem; font: inherit; cursor: pointer;
+    color: Canvas; background: CanvasText; border: 1px solid CanvasText;
+  }
 </style>
 </head><body><main><h1>${escapeHtml(title)}</h1>${body}<p><a href="/">Return to Olibana</a></p></main></body></html>`;
   return new Response(html, {
@@ -174,15 +197,23 @@ async function postCheckout(options: RouterOptions, request: Request): Promise<R
  */
 async function postWebhook(options: RouterOptions, request: Request): Promise<Response> {
   const body = await request.text();
-  const verified = options.verifier.verify(body, request.headers);
-  if (verified === null) {
-    // Unsigned, unverifiable, or no gateway configured. Everything downstream
-    // trusts this payload, so an unverified one is not processed at any cost.
+  const signed = await options.verifier.verify(body, request.headers);
+  if (signed === null || signed === undefined) {
+    // Unsigned, stale, forged, unparseable, or no secret configured. Everything
+    // downstream trusts this payload, so an unverified one never reaches it.
     return new Response('unverified', { status: 400 });
   }
 
+  // The agreement comes from what was recorded when it was made, never from
+  // the message. A signature proves who sent the payload, not that its amount
+  // is the one the customer agreed to.
+  const intent = options.stores.intents.byReference(signed.reference);
+  if (intent === null) {
+    return new Response('no such checkout', { status: 404 });
+  }
+
   try {
-    const { outcome, order } = completeCheckout(options.stores, verified.intent, verified.completed);
+    const { outcome, order } = completeCheckout(options.stores, intent, toCompletedCheckout(signed, intent.idempotencyKey));
     return new Response(`${outcome} ${order.number}`, { status: 200 });
   } catch (error) {
     if (error instanceof CheckoutUnavailable || error instanceof OrderRejected) {
@@ -193,6 +224,115 @@ async function postWebhook(options: RouterOptions, request: Request): Promise<Re
     }
     throw error;
   }
+}
+
+/**
+ * The page a customer lands on after paying.
+ *
+ * Reached by an unguessable reference, never by order number or email — those
+ * are things another person could know. If the order is not recorded yet, the
+ * webhook has not arrived: that is normal for a second or two after a
+ * redirect, and it is said plainly rather than shown as an error.
+ */
+function confirmation(order: OrderPlacement | null): Response {
+  if (order === null) {
+    return page(
+      202,
+      'Payment received',
+      '<p>Your payment has gone through. The order confirmation is still being recorded — ' +
+        'it will arrive by email shortly. Nothing further is needed from you.</p>',
+    );
+  }
+
+  const items = order.items
+    .map(
+      (item) =>
+        `<li>${escapeHtml(item.sku)} — size ${escapeHtml(item.size)} × ${item.quantity} — ` +
+        `${escapeHtml(formatPrice(item.unitPriceAmount, item.currency))} each</li>`,
+    )
+    .join('');
+
+  return page(
+    200,
+    `Order ${order.number}`,
+    `<p>Thank you. Your pre-order is recorded.</p>
+<ul>${items}</ul>
+<p><strong>Total paid:</strong> ${escapeHtml(formatPrice(order.totalAmount, order.currency))}</p>
+<p><strong>Dispatched by:</strong> ${escapeHtml(new Date(order.promisedShipBy).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }))}</p>
+<p>If this run does not reach its minimum, every order is refunded in full.</p>`,
+  );
+}
+
+/**
+ * Stands in for the gateway's own hosted page, locally.
+ *
+ * It collects the address a hosted checkout would collect, takes no card
+ * details and moves no money, then signs a webhook with the sandbox secret and
+ * feeds it through the same verified path a real gateway's callback takes —
+ * not a shortcut around it. What the sandbox cannot prove is that a real
+ * provider's payload parses; what it does prove is that everything from
+ * signature to confirmation works.
+ */
+async function sandbox(options: RouterOptions, request: Request): Promise<Response> {
+  const sandboxConfig = options.sandbox;
+  if (sandboxConfig === undefined) return new Response('not found', { status: 404 });
+
+  const url = new URL(request.url);
+
+  if (request.method === 'GET') {
+    const reference = url.searchParams.get('ref') ?? '';
+    const intent = options.stores.intents.byReference(reference);
+    if (intent === null) return page(404, 'No such checkout', '<p>This payment link is not valid.</p>');
+
+    return page(
+      200,
+      'Sandbox payment',
+      `<p><strong>Nothing is charged here.</strong> This stands in for the payment provider so the
+        order path can be exercised end to end. No card details are taken and no money moves.</p>
+<p>${escapeHtml(intent.productName)} — ${escapeHtml(intent.sku)} × ${intent.quantity} —
+  ${escapeHtml(formatPrice(intent.totalAmount, intent.currency))}</p>
+<form method="post" action="${SANDBOX_PATH}">
+  <input type="hidden" name="ref" value="${escapeHtml(reference)}">
+  <p><label>Address line 1 <input name="line1" value="1 Test Street" required></label></p>
+  <p><label>City <input name="city" value="Kyoto" required></label></p>
+  <p><label>Postal code <input name="postalCode" value="600-0000" required></label></p>
+  <p><label>Country <input name="country" value="JP" required></label></p>
+  <p><button type="submit">Pay (nothing happens)</button></p>
+</form>`,
+    );
+  }
+
+  const form = new URLSearchParams(await request.text());
+  const reference = form.get('ref') ?? '';
+  const intent = options.stores.intents.byReference(reference);
+  if (intent === null) return page(404, 'No such checkout', '<p>This payment link is not valid.</p>');
+
+  const payload: SignedWebhook = {
+    reference,
+    providerRef: `sandbox_${reference}`,
+    email: intent.email,
+    shippingAddress: {
+      line1: form.get('line1') ?? '', city: form.get('city') ?? '',
+      postalCode: form.get('postalCode') ?? '', country: form.get('country') ?? '',
+    },
+    amountPaid: intent.totalAmount,
+    currency: intent.currency,
+  };
+  const body = JSON.stringify(payload);
+
+  const callback = await postWebhook(options, new Request(`${url.origin}${WEBHOOK_PATH}`, {
+    method: 'POST',
+    headers: { 'x-olibana-signature': await signWebhook(sandboxConfig.secret, body) },
+    body,
+  }));
+  if (callback.status !== 200) {
+    return page(callback.status, 'The sandbox payment was refused', `<p>${escapeHtml(await callback.text())}</p>`);
+  }
+
+  return new Response(null, {
+    status: 303,
+    headers: { location: `${CONFIRMATION_PATH}?ref=${encodeURIComponent(reference)}`, 'cache-control': 'no-store' },
+  });
 }
 
 /** Routes a request. Anything not handled here is a static file. */
@@ -206,6 +346,13 @@ export async function handleRequest(options: RouterOptions, request: Request): P
       return new Response(null, { status: 303, headers: { location: '/' } });
     }
     return postCheckout(options, request);
+  }
+
+  if (pathname === SANDBOX_PATH) return sandbox(options, request);
+
+  if (pathname === CONFIRMATION_PATH) {
+    const reference = new URL(request.url).searchParams.get('ref') ?? '';
+    return confirmation(options.stores.orders.placementByReference(reference));
   }
 
   if (pathname === WEBHOOK_PATH) {

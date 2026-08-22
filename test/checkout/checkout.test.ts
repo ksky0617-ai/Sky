@@ -22,6 +22,7 @@ import {
   type CheckoutStores,
   type CompletedCheckout,
 } from '../../src/checkout/checkout.ts';
+import { IntentStore } from '../../src/checkout/intents.ts';
 import { OrderRejected } from '../../src/order/placement.ts';
 import { OrderStore } from '../../src/order/store.ts';
 import { PreorderRunStore, type RunInput } from '../../src/preorder/run.ts';
@@ -69,7 +70,11 @@ function stores(options: { product?: ProductInput; open?: boolean } = {}): Check
   const runs = new PreorderRunStore(resolve(dir, `runs-${id}.jsonl`));
   runs.record(runInput());
   if (options.open !== false) runs.record(runInput({ status: 'OPEN' }));
-  return { catalog, runs, orders: new OrderStore(resolve(dir, `orders-${id}.jsonl`)) };
+  return {
+    catalog, runs,
+    orders: new OrderStore(resolve(dir, `orders-${id}.jsonl`)),
+    intents: new IntentStore(resolve(dir, `intents-${id}.jsonl`)),
+  };
 }
 
 const begin = { productId: 'PRD_test', sku: 'OLB-CT-001-STN-M', quantity: 2, email: 'Ada@Example.test', idempotencyKey: 'chk_1' };

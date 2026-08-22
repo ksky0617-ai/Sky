@@ -9,6 +9,26 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-22-014 · V2 + V3 + V4 + V5 · Confirmation, sandbox, signature, deployment adapter
+
+| | |
+| --- | --- |
+| **Target** | `src/checkout/intents.ts`, `src/checkout/sandbox.ts`, `src/http/environment.ts`, `functions/[[path]].ts`, the confirmation route |
+| **Why** | §31.3 and §31.4: a missing gateway blocks *taking money*, not the checkout, the webhook contract, the failure handling or the confirmation. Treating a boundary as a wall left three Completion Gate items open that nothing external was actually blocking. |
+| **Defect found while building** | The webhook could not know what was agreed without either re-deriving it from the catalogue (which moves — the 99,000-against-72,000 defect) or trusting the payload (which lets the message define the price). **Intents are now recorded before the customer is sent to pay**, and the payload is only ever compared against one. |
+| **Duplicate encoding removed** | The signed payload carried an idempotency key the intent already held. Two copies of one fact, one of them controlled by an outsider. Removed; the key comes from the agreement. |
+| **Signature verification is real** | HMAC-SHA256 over `timestamp.payload`, constant-time comparison, 300-second freshness window — the mechanism Stripe uses, via Web Crypto so the same code runs on Workers. When a human supplies the account and the secret, **what changes is the payload shape, not the security model**. |
+| **Configuration** | Three valid states — closed, sandbox, live — and `validateEnvironment` refuses everything between them: a secret with no mode, a mode with no secret, a sandbox on a public origin. It throws rather than defaulting, because a default decides on its own whether a deployment can take money. |
+| **Deployment** | `functions/[[path]].ts` is a thin adapter over the same `handleRequest` the local server uses — no second routing implementation, because a deployment that behaves differently from the machine it was tested on was never tested. Driven in tests exactly as Pages drives it. |
+| **Observed** | 280/280 pass. **Whole loop over real HTTP in sandbox mode**: `POST /checkout` → 303 to `/sandbox/pay` → page states *"Nothing is charged here"* and 144,000 JPY → `POST` → signed webhook → verified → order `OLB-2608-0001`, `OLB-CT-001-STN-M ×2`, 144000 JPY, **PAID** → confirmation shows it. Also through the deployment adapter: closed refuses, sandbox unreachable unless enabled, live verifies signatures and still refuses to invent a checkout URL, a forged signature manufactures nothing in either mode. |
+| **Result** | **PASS** for everything either side of a real payment. |
+| **Mutations** | M69 signature never compared → caught. M70 replay window unbounded → caught. M72 paid amount assumed rather than checked → caught. M73 confirmation shows whatever it finds → caught. M74 sandbox enabled by any truthy value → caught. M75 mode defaults to sandbox → caught by 5. M76 a mode may run without a secret → caught by 3. M77 sandbox on a public origin → caught. M79 an agreement rewritten by re-recording → caught. M80 an order stored with no reference → caught. **M71 (constant-time comparison → `===`) is an equivalent mutant** — the difference is timing, which no functional test can observe, and it is stated rather than counted. **M78 survived and was removed rather than tested**: the empty-reference guard was unreachable, so the invariant moved to the write, where it is enforced once and is now caught by M78′. |
+| **VISUAL — defect found by extending the check** | The confirmation and sandbox pages are rendered by the router, not the build, so they sat outside `visual-check.mjs`. Adding them found **every control on them under the WCAG 2.2 AA 24px target minimum** — 19px links, a 21px pay button. A page a customer reaches after paying is not a place to relax an accessibility floor. Fixed; re-measured clean at 1280/834/390. |
+| **Limitation** | **No real payment has been executed and none can be.** The sandbox proves everything from signature to confirmation; it cannot prove that a real provider's payload parses. Cloudflare has never run the adapter — that needs credentials. **`live` mode cannot run on Pages as configured at all**: the logs are files and Pages Functions have no writable filesystem (PCQ-004). |
+| **Commit** | written against `83c93e3` |
+
+---
+
 ## V-2026-08-22-013 · V2 + V3 + V4 + V5 · The HTTP layer
 
 | | |

@@ -28,6 +28,10 @@ import { tmpdir } from 'node:os';
 import { resolve, extname } from 'node:path';
 
 import { Catalog, variant } from '../src/catalog/catalog.ts';
+import { IntentStore } from '../src/checkout/intents.ts';
+import { HmacWebhookVerifier, SandboxGateway } from '../src/checkout/sandbox.ts';
+import { handleRequest } from '../src/http/router.ts';
+import { OrderStore } from '../src/order/store.ts';
 import { PreorderRunStore } from '../src/preorder/run.ts';
 import { build } from '../src/site/build.ts';
 
@@ -72,16 +76,47 @@ runs.record({ ...run, status: 'OPEN' });
 const root = resolve(work, 'site');
 build({ outDir: root, catalogPath, runsPath });
 
+// The checkout, sandbox and confirmation pages are rendered by the router, not
+// by the build, so the server mounts it. Those states are the ones §11 asks for
+// and the ones a screenshot has already caught a defect in.
+const SANDBOX_SECRET = 'visual-check-sandbox-secret';
+const routerOptions = {
+  stores: {
+    catalog: new Catalog(catalogPath),
+    runs: new PreorderRunStore(runsPath),
+    orders: new OrderStore(resolve(work, 'orders.jsonl')),
+    intents: new IntentStore(resolve(work, 'intents.jsonl')),
+  },
+  gateway: new SandboxGateway(true),
+  verifier: new HmacWebhookVerifier(SANDBOX_SECRET),
+  sandbox: { enabled: true, secret: SANDBOX_SECRET },
+};
+
 const types = { '.html': 'text/html', '.css': 'text/css', '.xml': 'application/xml', '.txt': 'text/plain' };
 const server = createServer((req, res) => {
-  let p = resolve(root, '.' + decodeURIComponent(req.url.split('?')[0]));
-  if (existsSync(p) && statSync(p).isDirectory()) p = resolve(p, 'index.html');
-  if (!existsSync(p)) {
-    res.writeHead(404, { 'content-type': 'text/html' });
-    return res.end(readFileSync(resolve(root, '404.html')));
-  }
-  res.writeHead(200, { 'content-type': types[extname(p)] ?? 'application/octet-stream' });
-  res.end(readFileSync(p));
+  void (async () => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+    const routed = await handleRequest(routerOptions, new Request(`http://127.0.0.1${req.url}`, {
+      method: req.method, headers: new Headers(req.headers), ...(body !== undefined ? { body } : {}),
+    }));
+    if (routed !== null) {
+      res.writeHead(routed.status, Object.fromEntries(routed.headers));
+      return res.end(Buffer.from(await routed.arrayBuffer()));
+    }
+    let p = resolve(root, '.' + decodeURIComponent(req.url.split('?')[0]));
+    if (existsSync(p) && statSync(p).isDirectory()) p = resolve(p, 'index.html');
+    if (!existsSync(p)) {
+      res.writeHead(404, { 'content-type': 'text/html' });
+      return res.end(readFileSync(resolve(root, '404.html')));
+    }
+    res.writeHead(200, { 'content-type': types[extname(p)] ?? 'application/octet-stream' });
+    res.end(readFileSync(p));
+  })().catch((error) => {
+    console.error(error);
+    res.writeHead(500).end('error');
+  });
 });
 const port = await new Promise((ok) => server.listen(0, () => ok(server.address().port)));
 
@@ -93,7 +128,33 @@ const browser = await chromium.launch({
 
 const errors = [];
 const viewports = [['desktop', 1280, 900], ['tablet', 834, 1112], ['mobile', 390, 844]];
-const routes = [['product', '/products/olb-ct-001'], ['shop', '/shop'], ['home', '/']];
+// A checkout is run first so the sandbox and confirmation pages have something
+// real to show. These are states, not fixtures: the same code path a customer
+// takes produced them.
+const checkoutResponse = await handleRequest(routerOptions, new Request(`http://127.0.0.1:${port}/checkout`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: new URLSearchParams({
+    productId: 'PRD_fixture', sku: 'OLB-CT-001-STN-M', quantity: '2', email: 'ada@example.test',
+  }).toString(),
+}));
+const reference = new URL(checkoutResponse.headers.get('location'), 'http://127.0.0.1')
+  .searchParams.get('ref');
+await handleRequest(routerOptions, new Request(`http://127.0.0.1:${port}/sandbox/pay`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  body: new URLSearchParams({
+    ref: reference, line1: '1 Test Street', city: 'Kyoto', postalCode: '600-0000', country: 'JP',
+  }).toString(),
+}));
+
+const routes = [
+  ['product', '/products/olb-ct-001'],
+  ['shop', '/shop'],
+  ['home', '/'],
+  ['confirmation', `/order/confirmation?ref=${reference}`],
+  ['sandbox', `/sandbox/pay?ref=${reference}`],
+];
 
 for (const [name, path] of routes) {
   for (const [size, width, height] of viewports) {
