@@ -53,6 +53,32 @@
 
 ## 3. Gate Evaluation — evidence for each FALSE
 
+### Adversarial completion audit — 2026-08-22, cycle 14
+
+Run against the repository, not against my impression of it. The directive's
+own 15 questions (§16). **Answering any of them "no" keeps COMPLETION at FALSE.**
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Are all core functions actually connected? | **Yes, up to the payment.** Page → form → `POST /checkout` → gateway boundary → webhook → order placed, priced, snapshotted, paid, persisted. Exercised over real HTTP. |
+| 2 | Is the UI built over an empty backend? | **No.** Every page reads from the catalogue and run logs; removing the run removes the form and the dates, asserted by test. |
+| 3 | Does anything depend on mock data? | **The payment gateway and the webhook verifier only** — and neither pretends: both refuse. Every other store is a real file in every test. |
+| 4 | Is persistence verified? | **Yes**, including across processes and a crash mid-write. **Except power loss** — nothing calls `fsync` (R-17). |
+| 5 | Do error paths exist? | **Yes**, and they are pages a person can read, not JSON. Refusals verified at 400/405/422/503. |
+| 6 | Is concurrency verified? | **Yes**, with spawned processes and a wall-clock barrier, after an earlier test was found to pass against no locking at all. |
+| 7 | Is crash durability verified? | **Yes** for a killed process. **No** for power loss. |
+| 8 | Is responsive rendering verified? | **Yes** — 1280/834/390 in Chromium: no overflow, no hidden content, no target under the 24px AA minimum, purchase button legible. |
+| 9 | Is the design system consistent? | **Partly.** Components are shared and a duplicate navigation control was removed. The palette is still the *construction* palette; the production build refuses to ship it, by design, until Atlas measurement happens. |
+| 10 | Has anything regressed? | **No.** Full suite green; every cycle re-runs it. |
+| 11 | Do the documents match the implementation? | **Yes** as of this entry. Figures are not restated in prose — that drift happened three times and was fixed by removing the duplicate. |
+| 12 | Is the deployment path reproducible? | **NO.** Untried. The handler is shaped for Cloudflare Pages Functions but has never run there. |
+| 13 | Was any Human Gate bypassed? | **No.** No payment executed, no gateway configured, no legal text written, no supplier contacted, no product published. |
+| 14 | Does anything remain UNKNOWN or UNVERIFIED? | **Yes**, and it is listed: payment execution, signature verification, deployment, power-loss durability, screen readers, Core Web Vitals, and every business figure that needs a supplier quotation. |
+| 15 | Can passing the Completion Gate be proven? | **No.** Items 12 and 14 are open, and BUILD_GATE is FALSE. |
+
+**COMPLETION = FALSE.** Not a formality: two of the fifteen are hard no, and the
+first sale cannot happen without a decision only a human can make.
+
 ### BUILD_GATE = **FALSE**
 
 | | Criterion | Value | Evidence |
