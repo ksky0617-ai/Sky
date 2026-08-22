@@ -40,6 +40,14 @@ export interface PlacementRequest {
   readonly sku: string;
   readonly quantity: number;
   readonly shippingAddress: Readonly<Record<string, string>>;
+  /**
+   * The price the customer agreed to, when that was settled earlier than this
+   * call — a checkout quotes a price, then the payment confirms minutes or
+   * hours later, and the catalogue can move in between. What they agreed to is
+   * what binds. Omitted for a direct placement, where the catalogue price *is*
+   * the agreed price because there was no gap.
+   */
+  readonly agreedUnitPrice?: { readonly amount: number; readonly currency: string };
   /** Makes a resubmitted form a no-op rather than a second order. */
   readonly idempotencyKey: string;
   readonly sessionId?: string;
@@ -58,12 +66,18 @@ export interface PlacementStores {
 }
 
 /** Lower-cased and trimmed, so one person is one customer. */
-function normaliseEmail(email: string): string {
+export function normaliseEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-/** Deliberately permissive: it rejects what cannot be an address, nothing more. */
-function assertEmail(email: string): void {
+/**
+ * Deliberately permissive: it rejects what cannot be an address, nothing more.
+ *
+ * Exported because the checkout must apply the same rule BEFORE sending anyone
+ * to pay. Applying it only here means an unusable address is discovered after
+ * the money has moved, which turns a correctable typo into a refund.
+ */
+export function assertEmail(email: string): void {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new OrderRejected(`"${email}" is not an email address we can send an order to`);
   }
@@ -158,8 +172,20 @@ export function placeOrder(
   }
 
   const now = request.placedAt ?? new Date();
-  const unitPriceAmount = variant.priceAmount as number;
-  const currency = variant.priceCurrency as string;
+
+  // The agreed price wins over the current one. Recording the catalogue's
+  // price instead would write an order for an amount nobody paid — measured,
+  // not hypothetical: repricing between checkout and confirmation produced an
+  // order at 99,000 against a payment of 72,000.
+  const agreed = request.agreedUnitPrice;
+  if (agreed !== undefined && agreed.currency !== variant.priceCurrency) {
+    throw new OrderRejected(
+      `${variant.sku} was agreed in ${agreed.currency} but is priced in ${variant.priceCurrency}. ` +
+        'A currency change mid-checkout is not something to reconcile silently.',
+    );
+  }
+  const unitPriceAmount = agreed?.amount ?? (variant.priceAmount as number);
+  const currency = agreed?.currency ?? (variant.priceCurrency as string);
   const subtotalAmount = unitPriceAmount * request.quantity;
 
   return orders.recordPlacement<PlacementResult>((records: readonly OrderRecord[]) => {

@@ -9,6 +9,25 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-22-013 · V2 + V3 + V4 + V5 · The HTTP layer
+
+| | |
+| --- | --- |
+| **Target** | `src/http/router.ts`, `scripts/serve.mjs`, price binding in `placeOrder` |
+| **Why** | The previous cycle put a form on the page that posted to `/checkout`, and nothing served `/checkout`. That is a **dead-end funnel** — §22.16 names it, and I had just created one. |
+| **Shape** | Fetch API `Request`/`Response`, no framework, zero dependencies. Cloudflare Pages Functions speak exactly this and Node has since 18, so one handler serves the deployed site and the local server. Two routes. |
+| **Defect found before writing the layer** | A test written first: repricing the catalogue between `beginCheckout` and `completeCheckout` produced **an order recorded at 99,000 against a payment of 72,000**. `placeOrder` re-read the catalogue for the price. The agreed price now binds, and a currency change mid-checkout is refused rather than reconciled. Caught by M68. |
+| **Defect found by a router test** | `beginCheckout` never validated the email. Only `placeOrder` did — which runs **after** the payment. A typo would have become a refund instead of a correction. The rule is now applied at both ends from one exported function. Caught by M67. |
+| **Idempotency without JavaScript** | A hidden nonce cannot work here: the site is static, so a nonce is minted once at build time and is **the same value for every visitor** — every order would collapse into the first. The key is derived from the selection instead (product, SKU, quantity, email). The cost is stated in the source: one customer cannot place two separate orders for the same size at the same quantity. That is what the quantity field is for, and it is a smaller failure than a double charge. |
+| **Trust boundary** | `WebhookVerifier` has no default implementation. Everything downstream trusts the amount, the address and the key, so an unverified payload is never processed — `UnconfiguredVerifier` returns null and the route answers 400. |
+| **Observed** | 241/241 pass. **V3 over real HTTP** against a running server: `GET /` 200 · `GET /checkout` 303 home · `POST /checkout` with the repository's real (empty) catalogue → 422 *"PRD_x is not for sale"* · with a fixture product and open run → **503 "Ordering is not open yet — nothing has been charged and nothing has been recorded"** · bad email → 422 with the reason · `POST /webhooks/payment` unsigned → 400 · product page still served · **no order log written**, because nobody paid. |
+| **Result** | **PASS.** The funnel is no longer a dead end. It ends, honestly, at the gateway that does not exist. |
+| **Mutations** | M64 unverified webhooks processed → caught. M65 a fresh key per submission (a double-click becomes two orders) → caught. M66 a mismatched payment answered with a retryable status → caught. M67 email unvalidated before payment → caught. M68 order written at the catalogue price rather than the paid price → caught. |
+| **Limitation** | **No payment has been executed and none can be.** No gateway, no verifier, no legal entity (P0-7, HG-04). The success path through the webhook is verified at V2 with real files and a test verifier; **no signature has ever been validated**, and the test verifier proves only what is downstream of verification. Deployment to Cloudflare Pages Functions is untried — the handler is shaped for it, which is not the same as having run there. |
+| **Commit** | written against `a3bec15` |
+
+---
+
 ## V-2026-08-22-012 · V1 + V2 + V3 + V4 + V5 · Checkout boundary and visual audit
 
 | | |

@@ -33,7 +33,13 @@
  */
 
 import type { Catalog } from '../catalog/catalog.ts';
-import { OrderRejected, placeOrder, type PlacementStores } from '../order/placement.ts';
+import {
+  assertEmail,
+  normaliseEmail,
+  OrderRejected,
+  placeOrder,
+  type PlacementStores,
+} from '../order/placement.ts';
 import type { OrderPlacement, OrderStore } from '../order/store.ts';
 import type { PreorderRunStore } from '../preorder/run.ts';
 
@@ -134,6 +140,11 @@ export function beginCheckout(stores: CheckoutStores, request: BeginRequest): Ch
   if (request.idempotencyKey.trim() === '') {
     throw new OrderRejected('a checkout needs an idempotency key, or a retry becomes a second order');
   }
+  // Checked here as well as at placement. Placement happens after the payment,
+  // so an address that cannot receive a confirmation would otherwise surface
+  // as a refund rather than as a correctable typo.
+  const email = normaliseEmail(request.email);
+  assertEmail(email);
 
   return {
     productId: product.productId,
@@ -143,7 +154,7 @@ export function beginCheckout(stores: CheckoutStores, request: BeginRequest): Ch
     unitPriceAmount: variant.priceAmount,
     currency: variant.priceCurrency,
     totalAmount: variant.priceAmount * request.quantity,
-    email: request.email.trim().toLowerCase(),
+    email,
     preorderRunId: run.runId,
     promisedShipBy: run.promisedShipBy,
     idempotencyKey: request.idempotencyKey,
@@ -188,6 +199,8 @@ export function completeCheckout(
     quantity: intent.quantity,
     shippingAddress: completed.shippingAddress,
     idempotencyKey: intent.idempotencyKey,
+    // What the customer was quoted and paid, not what the catalogue says now.
+    agreedUnitPrice: { amount: intent.unitPriceAmount, currency: intent.currency },
     ...(completed.sessionId !== undefined ? { sessionId: completed.sessionId } : {}),
     ...(completed.signalId !== undefined ? { signalId: completed.signalId } : {}),
   });

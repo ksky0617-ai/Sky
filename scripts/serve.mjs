@@ -1,16 +1,83 @@
+/**
+ * Serves the built site, with the checkout routes live.
+ *
+ * The same `handleRequest` that a Cloudflare Pages Function would call is
+ * mounted here, so the selection-to-order path is genuinely runnable locally
+ * rather than only unit-tested. Static files are served when the router
+ * declines a request.
+ *
+ * No payment gateway is configured, so a submitted form gets an honest 503.
+ * That is the true state of the system, and this server does not pretend
+ * otherwise.
+ *
+ *   node --experimental-strip-types scripts/serve.mjs [dist] [port]
+ *
+ * OLIBANA_CATALOG / OLIBANA_RUNS / OLIBANA_ORDERS override the data paths, so a
+ * fixture product can be served without recording one in the repository.
+ */
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { resolve, extname } from 'node:path';
-const root = process.argv[2];
-const types = { '.html':'text/html', '.css':'text/css', '.xml':'application/xml', '.txt':'text/plain' };
-const srv = createServer((req, res) => {
-  let p = resolve(root, '.' + decodeURIComponent(req.url.split('?')[0]));
-  if (existsSync(p) && statSync(p).isDirectory()) p = resolve(p, 'index.html');
-  if (!existsSync(p)) {
-    res.writeHead(404, { 'content-type': 'text/html' });
-    return res.end(readFileSync(resolve(root, '404.html')));
-  }
-  res.writeHead(200, { 'content-type': types[extname(p)] ?? 'application/octet-stream' });
-  res.end(readFileSync(p));
+
+import { Catalog } from '../src/catalog/catalog.ts';
+import { UnconfiguredGateway } from '../src/checkout/checkout.ts';
+import { handleRequest, UnconfiguredVerifier } from '../src/http/router.ts';
+import { OrderStore } from '../src/order/store.ts';
+import { PreorderRunStore } from '../src/preorder/run.ts';
+import { CATALOG_PATH, RUNS_PATH } from '../src/site/routes.ts';
+
+const root = process.argv[2] ?? 'dist';
+const port = Number(process.argv[3] ?? 0);
+const ORDERS_PATH = resolve(import.meta.dirname, '../data/orders.jsonl');
+
+const options = {
+  stores: {
+    catalog: new Catalog(process.env.OLIBANA_CATALOG ?? CATALOG_PATH),
+    runs: new PreorderRunStore(process.env.OLIBANA_RUNS ?? RUNS_PATH),
+    orders: new OrderStore(process.env.OLIBANA_ORDERS ?? ORDERS_PATH),
+  },
+  gateway: new UnconfiguredGateway(),
+  verifier: new UnconfiguredVerifier(),
+};
+
+const types = {
+  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.xml': 'application/xml', '.txt': 'text/plain; charset=utf-8',
+};
+
+async function toRequest(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const body = chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+  return new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
+    method: req.method,
+    headers: new Headers(req.headers),
+    ...(body !== undefined ? { body } : {}),
+  });
+}
+
+const server = createServer((req, res) => {
+  void (async () => {
+    const routed = await handleRequest(options, await toRequest(req));
+    if (routed !== null) {
+      res.writeHead(routed.status, Object.fromEntries(routed.headers));
+      return res.end(Buffer.from(await routed.arrayBuffer()));
+    }
+
+    let file = resolve(root, '.' + decodeURIComponent(req.url.split('?')[0]));
+    if (existsSync(file) && statSync(file).isDirectory()) file = resolve(file, 'index.html');
+    if (!existsSync(file)) {
+      res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(readFileSync(resolve(root, '404.html')));
+    }
+    res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' });
+    res.end(readFileSync(file));
+  })().catch((error) => {
+    // Nothing is hidden: an unexpected failure here is a defect, not a page.
+    console.error(error);
+    res.writeHead(500, { 'content-type': 'text/plain' });
+    res.end('internal error');
+  });
 });
-srv.listen(0, () => process.stdout.write(String(srv.address().port) + '\n'));
+
+server.listen(port, () => process.stdout.write(`${server.address().port}\n`));

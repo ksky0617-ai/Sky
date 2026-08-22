@@ -212,3 +212,23 @@ test('the whole path survives a reload', () => {
   assert.deepEqual(reloaded.placement(order.orderId), order);
   assert.equal(reloaded.customerByEmail('ada@example.test')?.customerId, order.customer.customerId);
 });
+
+test('the order records the price the customer paid, not the price now', () => {
+  // The catalogue can change between the customer being shown a price and the
+  // gateway confirming their payment. What they agreed to is what they paid.
+  const s = stores();
+  const intent = beginCheckout(s, begin);
+  const completed = paid(intent);
+
+  s.catalog.record(product({
+    variants: [variant('OLB-CT-001', 'STN', 'M', { amount: 99000, currency: 'JPY' })],
+  }));
+
+  const { order } = completeCheckout(s, intent, completed);
+  assert.equal(order.items[0].unitPriceAmount, 72000, 'the order was written at a price nobody paid');
+  assert.equal(
+    order.subtotalAmount,
+    completed.amountPaid,
+    'the order total and the money received disagree',
+  );
+});
