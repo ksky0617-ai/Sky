@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
-import { CorruptLogError, INITIAL_STATUS, OrderStore } from '../../src/order/store.ts';
+import { LogCorruptError, INITIAL_STATUS, OrderStore } from '../../src/order/store.ts';
 import { isId } from '../../src/identity/ids.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-store-'));
@@ -225,7 +225,7 @@ test('a corrupt line fails loudly rather than losing history silently', () => {
   const store = freshStore();
   store.append({ orderId: 'ORD_z', to: 'PAID', actor: 'a', idempotencyKey: '1' });
   writeFileSync(store.path, `${readFileSync(store.path, 'utf8')}{not json}\n`, 'utf8');
-  assert.throws(() => store.events(), CorruptLogError);
+  assert.throws(() => store.events(), LogCorruptError);
 });
 
 test('blank lines are tolerated; they carry no record', () => {

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 import {
-  Catalog, CatalogIntegrityError, CorruptCatalogError,
+  Catalog, CatalogIntegrityError, LogCorruptError,
   variant, type ProductInput,
 } from '../../src/catalog/catalog.ts';
 import { isId } from '../../src/identity/ids.ts';
@@ -69,11 +69,39 @@ test('revisions are appended; the latest wins and the earlier one survives', () 
 
 test('only PUBLISHED products are public', () => {
   const catalog = fresh();
-  for (const status of ['DRAFT', 'READY', 'CLOSED', 'ARCHIVED'] as const) {
-    catalog.record(publishable({ productId: `PRD_${status}`, status, variants: [], productionLeadDays: null }));
-  }
+  const statuses = ['DRAFT', 'READY', 'CLOSED', 'ARCHIVED'] as const;
+  statuses.forEach((status, i) => {
+    catalog.record(publishable({
+      productId: `PRD_${status}`,
+      code: `OLB-CT-00${i + 1}`,          // distinct products, distinct codes
+      status,
+      variants: [],
+      productionLeadDays: null,
+    }));
+  });
   assert.equal(catalog.published().length, 0, 'a non-published product leaked');
-  assert.equal(catalog.products().length, 4, 'private products must still be stored');
+  assert.equal(catalog.products().length, statuses.length, 'private products must still be stored');
+});
+
+test('one code cannot identify two products', () => {
+  // SPEC Part 2.2 — code is the public identifier, and every SKU is derived
+  // from it. Two products behind one code is two garments sold as one.
+  const catalog = fresh();
+  catalog.record(publishable({ productId: 'PRD_first' }));
+  assert.throws(
+    () => catalog.record(publishable({ productId: 'PRD_second' })),
+    CatalogIntegrityError,
+  );
+  assert.equal(catalog.revisions().length, 1, 'the clashing product was written anyway');
+});
+
+test('a product may revise itself under its own code', () => {
+  // The uniqueness rule must not block the ordinary case it sits next to.
+  const catalog = fresh();
+  catalog.record(publishable({ productId: 'PRD_same', name: 'First' }));
+  catalog.record(publishable({ productId: 'PRD_same', name: 'Second' }));
+  assert.equal(catalog.products().length, 1);
+  assert.equal(catalog.product('PRD_same')?.name, 'Second');
 });
 
 test('a PUBLISHED product without a price is refused', () => {
@@ -154,7 +182,7 @@ test('a corrupt line fails loudly rather than losing the catalogue', () => {
   const catalog = fresh();
   catalog.record(publishable());
   writeFileSync(catalog.path, `${readFileSync(catalog.path, 'utf8')}{broken}\n`, 'utf8');
-  assert.throws(() => catalog.revisions(), CorruptCatalogError);
+  assert.throws(() => catalog.revisions(), LogCorruptError);
 });
 
 test('the catalogue exposes no way to mutate or delete a revision', () => {

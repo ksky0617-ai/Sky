@@ -23,10 +23,8 @@
  * Absent by design (SPEC §2.3): inventory — pre-order holds no stock.
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
-
 import { formatSku, isId, newId, parseSku, type CategoryCode } from '../identity/ids.ts';
+import { AppendLog, LogCorruptError } from '../persistence/append-log.ts';
 
 export type ProductStatus = 'DRAFT' | 'READY' | 'PUBLISHED' | 'CLOSED' | 'ARCHIVED';
 
@@ -79,7 +77,11 @@ export interface ProductRevision {
 export type ProductInput = Omit<ProductRevision, 'eventId' | 'recordedAt'>;
 
 export class CatalogIntegrityError extends Error {}
-export class CorruptCatalogError extends Error {}
+
+/** Re-exported so callers need not know where the log lives. */
+export { LogCorruptError };
+
+const DESCRIBE = 'product catalogue';
 
 function assertPublishable(product: ProductInput): void {
   if (!PUBLIC_STATUSES.has(product.status)) return;
@@ -142,34 +144,18 @@ function assertWellFormed(product: ProductInput): void {
 }
 
 export class Catalog {
-  readonly #path: string;
+  readonly #log: AppendLog<ProductRevision>;
 
   constructor(path: string) {
-    this.#path = path;
-    const directory = dirname(path);
-    if (!existsSync(directory)) mkdirSync(directory, { recursive: true });
+    this.#log = new AppendLog<ProductRevision>(path);
   }
 
   get path(): string {
-    return this.#path;
+    return this.#log.path;
   }
 
   revisions(): readonly ProductRevision[] {
-    if (!existsSync(this.#path)) return [];
-    return readFileSync(this.#path, 'utf8')
-      .split('\n')
-      .filter((line) => line.trim() !== '')
-      .map((line, index) => {
-        try {
-          return JSON.parse(line) as ProductRevision;
-        } catch (cause) {
-          throw new CorruptCatalogError(
-            `${this.#path}: line ${index + 1} is not valid JSON. The catalogue is append-only; ` +
-              'restore it from history rather than repairing it in place.',
-            { cause },
-          );
-        }
-      });
+    return this.#log.read(DESCRIBE).records;
   }
 
   /** Latest revision of every product, in first-recorded order. */
@@ -200,13 +186,28 @@ export class Catalog {
     assertWellFormed(input);
     assertPublishable(input);
 
-    const revision: ProductRevision = {
-      ...input,
-      eventId: newId('event'),
-      recordedAt: new Date().toISOString(),
-    };
-    appendFileSync(this.#path, `${JSON.stringify(revision)}\n`, 'utf8');
-    return revision;
+    // The uniqueness check and the write it authorises are one critical
+    // section. Checked against the log rather than against a cached set, so it
+    // holds across processes and restarts.
+    return this.#log.withLock<ProductRevision>(DESCRIBE, (revisions) => {
+      const clash = revisions.find(
+        (r) => r.code === input.code && r.productId !== input.productId,
+      );
+      if (clash !== undefined) {
+        throw new CatalogIntegrityError(
+          `${input.code} already identifies ${clash.productId}; it cannot also identify ` +
+            `${input.productId}. SPEC Part 2.2 calls code the public identifier, and every SKU ` +
+            'is derived from it — two products sharing one would be two garments sold as one.',
+        );
+      }
+
+      const revision: ProductRevision = {
+        ...input,
+        eventId: newId('event'),
+        recordedAt: new Date().toISOString(),
+      };
+      return { record: revision, result: revision };
+    });
   }
 }
 

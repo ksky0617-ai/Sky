@@ -103,6 +103,15 @@
 - **Mitigation:** Return cost on cross-border may approach item value — model this before setting price.
 - **Owner:** Brand owner · **Status:** `OPEN`
 
+### R-17 · An acknowledged order is lost to power failure, not to a crash
+- **Domain:** Engineering · **P:** 2 · **S:** 5 · **Score: 10**
+- **Failure:** A customer is told their order was accepted; the record is not on disk after the machine loses power. The customer has paid and the business has no record of what they bought.
+- **Cause:** The append log calls `writeSync` but never `fsync`. A **process kill** is survived and tested (V-2026-08-15-010); a **power loss** is a different failure — the bytes may still be in the OS page cache.
+- **Detection:** None automatic. It surfaces as a customer holding a receipt the system cannot match.
+- **Prevention:** `fsync` before acknowledging, or a host whose storage acknowledges durably. Untested either way — nothing here may be claimed as power-safe until it is.
+- **Mitigation:** Stripe holds an independent record of every payment; reconciliation against it recovers what the log lost. **This is why the payment provider must not be the same system as the order log.**
+- **Owner:** Engineering · **Status:** `OPEN` — accepted for now; must be closed before the first real payment.
+
 ### R-09 · Pinterest account loss removes the whole acquisition channel
 - **Domain:** Acquisition · **P:** 3 · **S:** 5 · **Score: 15**
 - **Failure:** Automated or duplicative publishing triggers spam detection; account suspended.
@@ -174,7 +183,7 @@
 
 ```
 P0 open   6     ← business cannot operate
-P1 open   7
+P1 open   8     ← R-17 added: durability under power loss, not process crash
 P2 open   3
 Resolved  0
 

@@ -43,7 +43,7 @@
 |---|---|
 | **What is complete?** | The specification corpus: brand doctrine, four Atlases (method only), website design system, business loop audit, risk register, ADR-001…008, first-garment execution pack, category decision pack, outerwear spec pack, supplier sourcing, unit-economics calculator. |
 | **What is verified?** | **Website at V3** — renders in a real browser, serves over real HTTP. **Order persistence at V2** — append-only log on a real filesystem, state derived by replay, redelivery safe across restart. **Pure modules at V1+V4** — order transitions (also checked mechanically against the spec document), identifiers, break-even. Counts and mutation results: `VERIFICATION_LOG.md`. Everything else remains V0 or unverified. |
-| **What is not verified?** | Product, variant, pre-order run, payment, shipment — all `SPEC_ONLY`. **No concurrency has ever been tested**: the store is single-writer, and two processes could both pass the idempotency check before either writes. Crash-during-write durability untested. For the website: screen readers, colour contrast (the palette under test is the construction palette), browsers other than Chromium, Core Web Vitals on a real network. Conformance verifies transcription fidelity, **not that the specification is itself correct**; 4 prose-quantified forbidden rules sit outside machine verification and are disclosed as such. |
+| **What is not verified?** | Pre-order run, payment, shipment — all `SPEC_ONLY`. Concurrency and crash-during-write **are now tested with spawned processes** (V-2026-08-15-010): both were confirmed as real defects and fixed. Still unverified: **power-loss durability** — nothing calls `fsync`, so an acknowledged record can sit in the OS page cache when the machine loses power. The write lock is filesystem-scoped and would not hold across machines. For the website: screen readers, colour contrast (the palette under test is the construction palette), browsers other than Chromium, Core Web Vitals on a real network. Conformance verifies transcription fidelity, **not that the specification is itself correct**; 4 prose-quantified forbidden rules sit outside machine verification and are disclosed as such. |
 | **What is blocked?** | Nothing autonomous. The commerce path awaits the user's spec fill → quotation; implementation continues in parallel on pure, spec-determined modules. |
 | **Why is it blocked?** | Category resolved (ADR-005: Outerwear). The build now waits on cost and price, which wait on a quotation, which waits on the spec pack being filled. No decision is outstanding on this path. |
 | **What is the current critical path?** | ~~품목~~ ✅ → **실측·사양 기입 → 견적 발송** → 원가 → 가격 → `PreorderRun.minimum_quantity` → pre-order open |
@@ -61,10 +61,10 @@
 | BG-02 | Executability | **TRUE** | `package.json`; `npm test` runs on Node 22 via `--experimental-strip-types`, 0 deps |
 | BG-03 | Testability | **TRUE** | `node:test` suite plus a real-browser render check and a real-filesystem persistence check; the order state machine is additionally checked against the spec document mechanically |
 | BG-04 | Critical Path Coverage | **FALSE** | Website renders; orders persist and replay; products are catalogued and render from data. Still absent: cart, checkout, payment, shipment, analytics. |
-| BG-05 | Invariant Protection | **PARTIAL** | Mutation-verified: order transitions, SKU/identifier integrity, UNKNOWN-never-zero, append-only history, redelivery safety across restart. Not protected: availability integrity, concurrent writers. |
+| BG-05 | Invariant Protection | **PARTIAL** | Mutation-verified: order transitions, SKU/identifier integrity, UNKNOWN-never-zero, append-only history, redelivery safety across restart, **mutual exclusion between processes**, **product-code uniqueness under contention**. Not protected: availability integrity, power-loss durability. |
 | BG-06 | Reproducibility | **TRUE** | `npm test` re-runs deterministically; the site build is byte-identical across runs (asserted) |
 | BG-07 | Persistence | **TRUE** | This file + `PROTOCOL_LOCK.md` |
-| BG-08 | Failure Handling | **PARTIAL** | Order rejection paths implemented, persisted and tested; a corrupt log fails loudly rather than losing history. Payment, production and shipping recovery unimplemented; crash-during-write untested. |
+| BG-08 | Failure Handling | **PARTIAL** | Order rejection paths implemented, persisted and tested; a corrupt log fails loudly rather than losing history; **a crash mid-write is survived — the fragment is discarded on read and removed before the next append, and the log keeps accepting writes**. Payment, production and shipping recovery unimplemented. |
 | BG-09 | Security Boundary | UNVERIFIED | No system exists; attack surface is 0 but untested |
 | BG-10 | No Critical Blocker | **FALSE** | 6 open P0 (P0-1 closed) |
 
@@ -92,11 +92,11 @@ CG-02, CG-03, CG-05, CG-06, CG-09, CG-10, CG-11 all FALSE. CG-08 now TRUE. Not r
 **Current headline:**
 
 ```
-LATEST:      V-2026-08-15-006 (V1 + V4, independent spec conformance)
+LATEST:      V-2026-08-15-010 (V2 + V4 + V5, concurrency and crash durability)
 COMMAND:     npm run verify   (build + suite; counts deliberately not restated here)
-MUTATIONS:   33 run to date · 32 caught · 1 survivor root-caused and eliminated
-HIGHEST TIER: V3 website and product page (real browser) · V2 order and catalogue persistence · V4 throughout
-NEVER EXERCISED: concurrency · payment · production boundary · crash durability
+MUTATIONS:   40 run to date · 39 caught · 1 survivor root-caused and eliminated
+HIGHEST TIER: V3 website and product page (real browser) · V2 multi-process persistence · V4 throughout
+NEVER EXERCISED: payment · production boundary · power-loss durability (no fsync)
 ```
 
 **Standing caveat.** Conformance verifies that the implementation matches the specification document. It does not verify that the specification is correct, and 4 prose-quantified forbidden rules sit outside machine verification — disclosed by an assertion in `test/conformance/`, not assumed covered.

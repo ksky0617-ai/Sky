@@ -5,7 +5,29 @@
 
 Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` adversarial/mutation · `V5` regression · `V6` production-boundary.
 
-> **V3 reached for the website** (real browser, real HTTP). **V2 reached for order persistence** (real filesystem, reload across instances). Payment and the production boundary remain unexercised, and no concurrency has ever been tested.
+> **V3 reached for the website** (real browser, real HTTP). **V2 reached for order persistence** (real filesystem, reload across instances). **Concurrency and crash durability are now exercised** with spawned processes (V-2026-08-15-010). Payment and the production boundary remain unexercised.
+
+---
+
+## V-2026-08-15-010 · V2 + V4 + V5 · Concurrency and crash durability
+
+| | |
+| --- | --- |
+| **Target** | `src/persistence/append-log.ts` (new), `src/order/store.ts`, `src/catalog/catalog.ts` |
+| **Why** | Two items had been carried as UNVERIFIED since the store was written, and the catalogue added a **second writer to the same persistence pattern**. Both were tested rather than reasoned about. |
+| **Method** | Real processes spawned by `scripts/append-worker.mjs`, `scripts/catalog-worker.mjs` and `scripts/lock-holder.mjs`. No simulation: the defect lives between two syscalls and cannot be reproduced inside one event loop. |
+| **Defect 1 — concurrency (CONFIRMED, then fixed)** | 8 processes delivering **one idempotency key** produced **2 accepted records** (`duplicate,duplicate,duplicate,applied,duplicate,duplicate,applied,duplicate`). Each read the log, saw no duplicate, and wrote. In a payment context that is one payment recorded twice. |
+| **Defect 2 — crash durability (CONFIRMED, then fixed)** | A partial final line made the **entire history unreadable**: `CorruptLogError` on every read. One interrupted write and no order could be read at all. |
+| **Defect 3 — found only because the fix was tested (CONFIRMED, then fixed)** | Discarding the fragment on *read* was not enough. The fragment has no terminating newline, so the **next append welded itself to it**, producing a genuinely corrupt line in the middle of committed history — unrecoverable, and strictly worse than the defect being fixed. The first writer to take the lock now truncates back to the last complete record. |
+| **Defect 4 — found in my own test (VERIFICATION attribution)** | The first concurrency test **passed against a store with no mutual exclusion at all**. It was measuring Node startup jitter: processes launched together do not arrive together, so they queued themselves. Rewritten with a wall-clock start barrier, after which the mutation was caught. A concurrency test without a barrier is not evidence. |
+| **Fix** | One `AppendLog` shared by both stores. Mutual exclusion by lockfile (`openSync(..., 'wx')` — atomic, dependency-free, visible to every process on the filesystem, which is what a lock between processes must be). Read and decision and write are one critical section. Truncation offsets are measured in **bytes, not characters**, because a Japanese product name makes those differ. |
+| **Observed** | 140/140 pass. Order log: 8 simultaneous same-key deliveries → 1 accepted, 1 caller told `applied`. 12 distinct keys → 12 records, no loss, no corruption. 6 simultaneous transitions of one order → 1 accepted, 5 refusals **recorded**. Catalogue: 8 processes claiming one product code → 1 claimant, 7 refused. |
+| **Result** | **PASS** |
+| **Mutations** | M34 lock never acquired → caught by 4. M35 fragment not removed before append → caught by 3. M36 all corruption forgiven → caught by 6. M37 offset counted in characters not bytes → caught by 1. M38 abandoned lock never reclaimed → caught by 1. M39 code-uniqueness check removed → caught by 2. **M40 uniqueness checked outside the lock** (check-then-write split, the original defect re-introduced in the catalogue) → caught by 1. Control: 0 false failures on unmodified source. |
+| **Consequence for the catalogue** | Before this, `record` had no read-then-decide step, so its concurrency test could not discriminate — the lock protected nothing there. SPEC Part 2.2 calls `code` the **public identifier**, and an identifier that is not unique is not one; enforcing that under the lock is what M40 now tests. |
+| **Limitation** | The lock is **filesystem-scoped**. It holds for writers sharing a filesystem; it would not hold across machines writing to different mounts of the same data. That deployment does not exist and must not be introduced without replacing the mechanism. `fsync` is not called, so a **power loss** (as opposed to a process kill) can still lose an acknowledged record in the OS page cache — untested and unclaimed. Stale-lock reclaim uses mtime age, not liveness: a writer paused longer than `STALE_LOCK_MS` could have its lock stolen. |
+| **Environment** | Node v22.22.2, `--experimental-strip-types`, zero dependencies |
+| **Commit** | written against `d06a7ea` |
 
 ---
 
@@ -119,7 +141,7 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 ## Standing limitations across all entries
 
 ```
-Never exercised:  concurrency · payment · production boundary · crash durability
+Never exercised:  payment · production boundary · power-loss durability (fsync)
 Never verified:   that the specification is correct
                   that a factory accepts the spec pack
                   that a real payment succeeds
