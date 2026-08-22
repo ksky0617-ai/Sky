@@ -42,8 +42,64 @@ import {
   type TransitionRecord,
 } from './state-machine.ts';
 
+/**
+ * An order's immutable facts, written once when it is placed.
+ *
+ * SPEC Part 2.2 (Order, OrderItem, Customer). It shares the transition log
+ * rather than living in a second file, because two logs cannot be written
+ * atomically: an order record without its history, or a history without its
+ * order, is a state neither file can detect. One log cannot disagree with
+ * itself.
+ *
+ * Prices and SKUs are COPIED, not referenced — SPEC Part 2.2 states the reason:
+ * a later price change would otherwise rewrite what past customers were
+ * charged, and a receipt that disagrees with the order is a data-integrity
+ * failure, not a display bug.
+ */
+export interface OrderItemSnapshot {
+  readonly sku: string;
+  readonly size: string;
+  readonly colour: string;
+  readonly quantity: number;
+  /** Minor units, at the moment of ordering. */
+  readonly unitPriceAmount: number;
+  readonly currency: string;
+}
+
+export interface CustomerFacts {
+  readonly customerId: string;
+  readonly email: string;
+  readonly name: string | null;
+}
+
+export interface OrderPlacement {
+  readonly kind: 'placement';
+  readonly eventId: string;
+  readonly orderId: string;
+  /** Customer-facing number — SPEC Part 4. */
+  readonly number: string;
+  readonly customer: CustomerFacts;
+  readonly productId: string;
+  readonly preorderRunId: string;
+  readonly items: readonly OrderItemSnapshot[];
+  /**
+   * The date promised at the moment of ordering. Copied, never referenced:
+   * SPEC Part 2.2 — *나중에 Run이 바뀌어도 약속은 불변*.
+   */
+  readonly promisedShipBy: string;
+  readonly shippingAddress: Readonly<Record<string, string>>;
+  readonly subtotalAmount: number;
+  readonly totalAmount: number;
+  readonly currency: string;
+  readonly placedAt: string;
+  readonly idempotencyKey: string;
+  readonly sessionId?: string;
+  readonly signalId?: string;
+}
+
 /** One line of the log. Immutable once written. */
 export interface OrderEvent {
+  readonly kind?: 'transition';
   readonly eventId: string;
   readonly orderId: string;
   readonly from: OrderStatus;
@@ -54,19 +110,6 @@ export interface OrderEvent {
   readonly occurredAt: string;
   readonly accepted: boolean;
   readonly rejectionReason?: string;
-  /**
-   * The pre-order run this order commits to — SPEC Part 2.2, `Order.preorder_run_id`.
-   * Absent for orders that are not pre-orders.
-   */
-  readonly preorderRunId?: string;
-  /**
-   * Units this order commits. SPEC puts quantity on OrderItem; until that
-   * entity exists this event is its ONLY encoding, so there is nothing here to
-   * drift from. When OrderItem lands, this derivation moves there and this
-   * field must stop being read — two places holding one quantity is exactly the
-   * defect this codebase keeps removing.
-   */
-  readonly quantity?: number;
   /** Traceability chain — SPEC Part 4.3. Cannot be reconstructed later. */
   readonly sessionId?: string;
   readonly signalId?: string;
@@ -82,8 +125,17 @@ export interface AppendRequest {
   readonly sessionId?: string;
   readonly signalId?: string;
   readonly occurredAt?: Date;
-  readonly preorderRunId?: string;
-  readonly quantity?: number;
+}
+
+/** Everything the log holds. Discriminated so neither kind can be read as the other. */
+export type OrderRecord = OrderPlacement | OrderEvent;
+
+function isPlacement(record: OrderRecord): record is OrderPlacement {
+  return record.kind === 'placement';
+}
+
+function isTransition(record: OrderRecord): record is OrderEvent {
+  return record.kind !== 'placement';
 }
 
 export type AppendResult =
@@ -122,10 +174,10 @@ function redeliveryKeyOf(event: Pick<OrderEvent, 'orderId' | 'idempotencyKey'>):
 }
 
 export class OrderStore {
-  readonly #log: AppendLog<OrderEvent>;
+  readonly #log: AppendLog<OrderRecord>;
 
   constructor(path: string) {
-    this.#log = new AppendLog<OrderEvent>(path);
+    this.#log = new AppendLog<OrderRecord>(path);
   }
 
   get path(): string {
@@ -142,7 +194,36 @@ export class OrderStore {
    * so it was never acknowledged to anyone.
    */
   events(): readonly OrderEvent[] {
-    return this.#log.read(DESCRIBE).records;
+    return this.#log.read(DESCRIBE).records.filter(isTransition);
+  }
+
+  /** Every order placed, in the order they were placed. */
+  placements(): readonly OrderPlacement[] {
+    return this.#log.read(DESCRIBE).records.filter(isPlacement);
+  }
+
+  placement(orderId: string): OrderPlacement | null {
+    return this.placements().find((p) => p.orderId === orderId) ?? null;
+  }
+
+  /**
+   * Guest customers, derived from the orders they placed.
+   *
+   * There is no account system (SPEC Part 2.2), so a customer exists because
+   * they ordered. Deriving them keeps email uniqueness enforceable inside the
+   * same lock as the order it arrives with.
+   */
+  customers(): readonly CustomerFacts[] {
+    const byId = new Map<string, CustomerFacts>();
+    for (const placed of this.placements()) {
+      if (!byId.has(placed.customer.customerId)) byId.set(placed.customer.customerId, placed.customer);
+    }
+    return [...byId.values()];
+  }
+
+  customerByEmail(email: string): CustomerFacts | null {
+    const wanted = email.trim().toLowerCase();
+    return this.customers().find((c) => c.email === wanted) ?? null;
   }
 
   eventsFor(orderId: string): readonly OrderEvent[] {
@@ -155,7 +236,18 @@ export class OrderStore {
   }
 
   orderIds(): readonly string[] {
-    return [...new Set(this.events().map((event) => event.orderId))];
+    return [...new Set(this.#log.read(DESCRIBE).records.map((record) => record.orderId))];
+  }
+
+  /**
+   * Appends a placement under the same lock the transitions use, letting the
+   * caller decide against the log as it stands. Used by `placeOrder`, which
+   * owns every rule about what a valid order is.
+   */
+  recordPlacement<R>(
+    work: (records: readonly OrderRecord[]) => { record: OrderPlacement | null; result: R },
+  ): R {
+    return this.#log.withLock<R>(DESCRIBE, work);
   }
 
   /**
@@ -173,8 +265,8 @@ export class OrderStore {
    * accepted records.
    */
   append(request: AppendRequest): AppendResult {
-    return this.#log.withLock<AppendResult>(DESCRIBE, (events) => {
-      const history = events.filter((event) => event.orderId === request.orderId);
+    return this.#log.withLock<AppendResult>(DESCRIBE, (records) => {
+      const history = records.filter(isTransition).filter((event) => event.orderId === request.orderId);
       const from = deriveStatus(history);
 
       const key = redeliveryKeyOf(request);
@@ -270,18 +362,15 @@ export class OrderStore {
    * stops being in PREORDER_HELD and stops counting, with no separate step that
    * can be forgotten.
    *
-   * An order that reached PREORDER_HELD without a quantity contributes 1 — the
-   * order exists, so it commits at least one garment, and treating a missing
-   * quantity as 0 would let a run under-count what it owes.
+   * Quantities come from the order's own items (SPEC Part 2.2, OrderItem) —
+   * the single place a quantity is written. Nothing else records one, so there
+   * is no second number to drift.
    */
   committedUnits(runId: string): number {
-    const held = this.orderIds().filter((orderId) => this.status(orderId) === 'PREORDER_HELD');
-    return held.reduce((total, orderId) => {
-      const commitment = this.eventsFor(orderId)
-        .filter((event) => event.accepted && event.preorderRunId === runId)
-        .at(-1);
-      return commitment === undefined ? total : total + (commitment.quantity ?? 1);
-    }, 0);
+    return this.placements()
+      .filter((placed) => placed.preorderRunId === runId)
+      .filter((placed) => this.status(placed.orderId) === 'PREORDER_HELD')
+      .reduce((total, placed) => total + placed.items.reduce((n, item) => n + item.quantity, 0), 0);
   }
 }
 

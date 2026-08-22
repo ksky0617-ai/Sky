@@ -11,6 +11,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
+import { Catalog, variant, type ProductInput } from '../../src/catalog/catalog.ts';
+import { placeOrder } from '../../src/order/placement.ts';
 import { OrderStore } from '../../src/order/store.ts';
 import { closeRun, runContext } from '../../src/preorder/close.ts';
 import { PreorderRunStore, RunIntegrityError, type RunInput } from '../../src/preorder/run.ts';
@@ -18,11 +20,36 @@ import { PreorderRunStore, RunIntegrityError, type RunInput } from '../../src/pr
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-close-'));
 let n = 0;
 
-function stores(): { runs: PreorderRunStore; orders: OrderStore } {
+/** A publishable garment. Fixture only — no such product exists. */
+const product = (): ProductInput => ({
+  productId: 'PRD_test',
+  code: 'OLB-CT-001',
+  name: 'Test Coat',
+  category: 'CT',
+  status: 'PUBLISHED',
+  summary: 'A fixture, not a product.',
+  variants: [variant('OLB-CT-001', 'STN', 'M', { amount: 68000, currency: 'JPY' })],
+  measurements: [],
+  naturalRule: null,
+  materials: ['Wool'],
+  productionLeadDays: 60,
+  actor: 'test',
+});
+
+interface Stores {
+  runs: PreorderRunStore;
+  orders: OrderStore;
+  catalog: Catalog;
+}
+
+function stores(): Stores {
   const id = n++;
+  const catalog = new Catalog(resolve(dir, `cat-${id}.jsonl`));
+  catalog.record(product());
   return {
     runs: new PreorderRunStore(resolve(dir, `runs-${id}.jsonl`)),
     orders: new OrderStore(resolve(dir, `orders-${id}.jsonl`)),
+    catalog,
   };
 }
 
@@ -43,17 +70,25 @@ const quoted = (overrides: Partial<RunInput> = {}): RunInput => ({
   ...overrides,
 });
 
-/** Takes one order all the way to PREORDER_HELD against a run. */
-function commit(orders: OrderStore, orderId: string, runId: string, quantity?: number): void {
-  orders.append({ orderId, to: 'PAID', actor: 'stripe', idempotencyKey: `${orderId}-paid` });
-  orders.append({
-    orderId,
-    to: 'PREORDER_HELD',
-    actor: 'system',
-    idempotencyKey: `${orderId}-held`,
-    preorderRunId: runId,
-    ...(quantity !== undefined ? { quantity } : {}),
+/**
+ * Places a real order and takes it all the way to PREORDER_HELD.
+ *
+ * Goes through `placeOrder` rather than writing transitions by hand, so these
+ * tests exercise the path a customer actually takes.
+ */
+function commit(s: Stores, who: string, quantity: number): string {
+  const { order } = placeOrder(s, {
+    email: `${who}@example.test`,
+    productId: 'PRD_test',
+    sku: 'OLB-CT-001-STN-M',
+    quantity,
+    shippingAddress: { line1: '1 Test Street', city: 'Kyoto', postalCode: '600-0000', country: 'JP' },
+    idempotencyKey: `${who}-place`,
   });
+  const orderId = order.orderId;
+  s.orders.append({ orderId, to: 'PAID', actor: 'stripe', idempotencyKey: `${orderId}-paid` });
+  s.orders.append({ orderId, to: 'PREORDER_HELD', actor: 'system', idempotencyKey: `${orderId}-held` });
+  return orderId;
 }
 
 function openRun(runs: PreorderRunStore, overrides: Partial<RunInput> = {}): void {
@@ -62,12 +97,13 @@ function openRun(runs: PreorderRunStore, overrides: Partial<RunInput> = {}): voi
 }
 
 test('commitments are counted from the order log, not stored anywhere', () => {
-  const { runs, orders } = stores();
+  const s = stores();
+  const { runs, orders } = s;
   openRun(runs);
 
   assert.equal(orders.committedUnits('RUN_test'), 0);
-  commit(orders, 'ORD_1', 'RUN_test', 3);
-  commit(orders, 'ORD_2', 'RUN_test', 2);
+  commit(s, 'ada', 3);
+  commit(s, 'bea', 2);
   assert.equal(orders.committedUnits('RUN_test'), 5);
 
   // A fresh instance reading the same file must agree — the count is derived,
@@ -76,39 +112,39 @@ test('commitments are counted from the order log, not stored anywhere', () => {
 });
 
 test('a cancelled order stops counting, with no separate decrement to forget', () => {
-  const { runs, orders } = stores();
+  const s = stores();
+  const { runs, orders } = s;
   openRun(runs);
-  commit(orders, 'ORD_1', 'RUN_test', 4);
-  commit(orders, 'ORD_2', 'RUN_test', 6);
+  commit(s, 'ada', 4);
+  const cancelled = commit(s, 'bea', 6);
   assert.equal(orders.committedUnits('RUN_test'), 10);
 
   orders.append({
-    orderId: 'ORD_2', to: 'CANCELLED', actor: 'customer', idempotencyKey: 'ORD_2-cancel',
+    orderId: cancelled, to: 'CANCELLED', actor: 'customer', idempotencyKey: `${cancelled}-cancel`,
   });
   assert.equal(orders.committedUnits('RUN_test'), 4, 'a cancelled order still counted');
 });
 
 test('commitments to another run are not counted', () => {
-  const { runs, orders } = stores();
-  openRun(runs);
-  commit(orders, 'ORD_1', 'RUN_test', 5);
-  commit(orders, 'ORD_2', 'RUN_other', 5);
-  assert.equal(orders.committedUnits('RUN_test'), 5);
+  const s = stores();
+  openRun(s.runs);
+  commit(s, 'ada', 5);
+  assert.equal(s.orders.committedUnits('RUN_test'), 5);
+  assert.equal(s.orders.committedUnits('RUN_other'), 0, 'another run borrowed these commitments');
 });
 
-test('an order without a stated quantity counts as one, never as zero', () => {
-  // A missing quantity means the field was not recorded, not that nothing was
-  // ordered. Counting it as 0 would let a run under-count what it owes.
-  const { runs, orders } = stores();
-  openRun(runs);
-  commit(orders, 'ORD_1', 'RUN_test');
-  assert.equal(orders.committedUnits('RUN_test'), 1);
+test('units come from the order items, so one order can commit several garments', () => {
+  const s = stores();
+  openRun(s.runs);
+  commit(s, 'ada', 3);
+  assert.equal(s.orders.committedUnits('RUN_test'), 3, 'an order was counted as one garment');
 });
 
 test('a run that reached its minimum closes as REACHED', () => {
-  const { runs, orders } = stores();
+  const s = stores();
+  const { runs, orders } = s;
   openRun(runs);
-  commit(orders, 'ORD_1', 'RUN_test', 20);
+  commit(s, 'ada', 20);
 
   const result = closeRun(runs, orders, 'RUN_test', 'operator:test');
   assert.equal(result.revision.status, 'CLOSED_REACHED');
@@ -117,9 +153,10 @@ test('a run that reached its minimum closes as REACHED', () => {
 });
 
 test('a run that missed its minimum closes as UNDERSUBSCRIBED and nothing is produced', () => {
-  const { runs, orders } = stores();
+  const s = stores();
+  const { runs, orders } = s;
   openRun(runs);
-  commit(orders, 'ORD_1', 'RUN_test', 19);
+  commit(s, 'ada', 19);
 
   const result = closeRun(runs, orders, 'RUN_test', 'operator:test');
   assert.equal(result.revision.status, 'CLOSED_UNDERSUBSCRIBED');
@@ -132,9 +169,10 @@ test('the caller cannot choose how a run closes', () => {
   // let the committed count decide it.
   assert.equal(closeRun.length, 4, 'closeRun grew a parameter — check it is not an outcome');
 
-  const { runs, orders } = stores();
+  const s = stores();
+  const { runs, orders } = s;
   openRun(runs);
-  commit(orders, 'ORD_1', 'RUN_test', 1);
+  commit(s, 'ada', 1);
   assert.equal(closeRun(runs, orders, 'RUN_test', 'op').revision.status, 'CLOSED_UNDERSUBSCRIBED');
 });
 
@@ -150,9 +188,10 @@ test('a run with no minimum cannot be closed either way', () => {
 });
 
 test('a run cannot be closed twice', () => {
-  const { runs, orders } = stores();
+  const s = stores();
+  const { runs, orders } = s;
   openRun(runs);
-  commit(orders, 'ORD_1', 'RUN_test', 25);
+  commit(s, 'ada', 25);
   closeRun(runs, orders, 'RUN_test', 'op');
   assert.throws(() => closeRun(runs, orders, 'RUN_test', 'op'), RunIntegrityError);
 });
@@ -164,9 +203,10 @@ test('closing an unknown run is refused rather than silently creating one', () =
 });
 
 test('the guard context comes from the two logs, not from the caller', () => {
-  const { runs, orders } = stores();
+  const s = stores();
+  const { runs, orders } = s;
   openRun(runs);
-  commit(orders, 'ORD_1', 'RUN_test', 7);
+  commit(s, 'ada', 7);
 
   assert.deepEqual(runContext(runs, orders, 'RUN_test'), {
     committedQuantity: 7,
@@ -186,9 +226,10 @@ test('the guard context reports what is missing rather than substituting a numbe
 });
 
 test('the close survives a reload — it is on disk, not in memory', () => {
-  const { runs, orders } = stores();
+  const s = stores();
+  const { runs, orders } = s;
   openRun(runs);
-  commit(orders, 'ORD_1', 'RUN_test', 30);
+  commit(s, 'ada', 30);
   closeRun(runs, orders, 'RUN_test', 'op');
 
   const reloaded = new PreorderRunStore(runs.path);
