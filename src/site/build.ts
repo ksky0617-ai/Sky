@@ -13,6 +13,7 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
+import { headersFile } from './headers.ts';
 import { renderDocument, renderRobots, renderSitemap } from './layout.ts';
 import { buildRoutes, navigation } from './routes.ts';
 import { findConstructionTokens, stylesheet } from './styles.ts';
@@ -68,6 +69,9 @@ export function build({ outDir, production = false, origin = '', catalogPath, ru
   }
   emit('sitemap.xml', renderSitemap(routes, origin));
   emit('robots.txt', renderRobots(origin));
+  // Same headers the router sets in code, so a request is protected the same
+  // way whichever half of the system answered it.
+  emit('_headers', headersFile());
 
   return { files: written, routes: routes.map((r) => r.path), bytes };
 }

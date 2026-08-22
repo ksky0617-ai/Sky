@@ -40,6 +40,18 @@ const MIN_TARGET_PX = 24;
 /** WCAG 2.1 SC 1.4.3 Contrast (Minimum), Level AA, for large/bold UI text. */
 const MIN_CONTRAST = 4.5;
 
+/* Performance budgets — 21_UX_PERFORMANCE_COST_AUDIT.md.
+   Deliberately far tighter than the Core Web Vitals thresholds, because this
+   site ships no JavaScript, no web fonts and no images: anything approaching
+   the public thresholds would mean something had been added that should not
+   have been. A budget set at the threshold only fails once the damage is done.
+   These are measured on localhost, which removes the network — so they bound
+   what the page costs to render, not what a visitor on a slow link experiences.
+   That distinction is the reason the budgets are tight rather than generous. */
+const LCP_BUDGET_MS = 1_000;
+const CLS_BUDGET = 0.02;
+const PAYLOAD_BUDGET_BYTES = 120 * 1024;
+
 const shotDir = process.argv[2] ?? resolve(tmpdir(), 'olibana-shots');
 if (!existsSync(shotDir)) mkdirSync(shotDir, { recursive: true });
 
@@ -196,8 +208,49 @@ for (const [name, path] of routes) {
       };
     }, MIN_TARGET_PX);
 
+    // Performance, measured rather than assumed (§13). LCP and CLS come from
+    // the browser's own observers; the payload numbers come from the responses
+    // it actually fetched. INP needs a real interaction from a real person and
+    // is not measurable here — that is stated, not approximated.
+    const perf = await page.evaluate(() => new Promise((done) => {
+      let lcp = 0;
+      let cls = 0;
+      try {
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) lcp = Math.max(lcp, entry.startTime);
+        }).observe({ type: 'largest-contentful-paint', buffered: true });
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) if (!entry.hadRecentInput) cls += entry.value;
+        }).observe({ type: 'layout-shift', buffered: true });
+      } catch { /* an observer this browser lacks is not a page defect */ }
+
+      setTimeout(() => {
+        const resources = performance.getEntriesByType('resource');
+        const nav = performance.getEntriesByType('navigation')[0];
+        done({
+          lcp: Math.round(lcp),
+          cls: Number(cls.toFixed(4)),
+          ttfb: nav ? Math.round(nav.responseStart) : 0,
+          bytes: resources.reduce((total, r) => total + (r.transferSize || 0), 0) +
+                 (nav ? nav.transferSize || 0 : 0),
+          scripts: resources.filter((r) => r.initiatorType === 'script').length,
+        });
+      }, 400);
+    }));
+
+    if (perf.lcp > LCP_BUDGET_MS) errors.push(`${id}: LCP ${perf.lcp}ms, over the ${LCP_BUDGET_MS}ms budget`);
+    if (perf.cls > CLS_BUDGET) errors.push(`${id}: CLS ${perf.cls}, over the ${CLS_BUDGET} budget`);
+    if (perf.bytes > PAYLOAD_BUDGET_BYTES) {
+      errors.push(`${id}: ${(perf.bytes / 1024).toFixed(1)}KB transferred, over the ${PAYLOAD_BUDGET_BYTES / 1024}KB budget`);
+    }
+    if (perf.scripts > 0) errors.push(`${id}: ${perf.scripts} scripts loaded on a site that ships none`);
+
     const btn = m.button === null ? 'none' : `${m.button.height}px contrast=${m.button.contrast}`;
-    console.log(`${id.padEnd(17)} text=${String(m.textLen).padStart(5)} overflow=${m.overflow} hidden=${m.hidden} button=${btn} small=${m.small.join(', ') || 'none'}`);
+    console.log(
+      `${id.padEnd(17)} text=${String(m.textLen).padStart(5)} overflow=${m.overflow} ` +
+      `LCP=${String(perf.lcp).padStart(4)}ms CLS=${perf.cls} ${(perf.bytes / 1024).toFixed(1).padStart(5)}KB ` +
+      `js=${perf.scripts} button=${btn} small=${m.small.join(', ') || 'none'}`,
+    );
 
     if (m.overflow) errors.push(`${id}: the page scrolls horizontally`);
     if (m.hidden > 0) errors.push(`${id}: ${m.hidden} top-level children at opacity 0`);

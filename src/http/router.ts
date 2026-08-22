@@ -87,6 +87,27 @@ export interface RouterOptions {
   readonly sandbox?: { readonly enabled: true; readonly secret: string };
 }
 
+/**
+ * Headers every response from this router carries.
+ *
+ * `referrer-policy` is the one that matters most here, and it is not a
+ * formality: the confirmation URL carries the order's access token in its query
+ * string, so a `Referer` header sent to any other origin would hand that token
+ * away. `no-referrer` is the only setting that cannot.
+ *
+ * The CSP is strict because it can be — this site ships no JavaScript at all,
+ * so `script-src 'none'` costs nothing and removes the entire class. Inline
+ * styles are allowed because these pages carry their own, deliberately, so they
+ * render correctly even if the build never ran.
+ */
+export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  'content-security-policy':
+    "default-src 'self'; script-src 'none'; style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+  'referrer-policy': 'no-referrer',
+  'x-content-type-options': 'nosniff',
+};
+
 function page(status: number, title: string, body: string): Response {
   // Deliberately plain and self-contained: this is what a customer sees when
   // something went wrong, and it must not depend on the build having run.
@@ -119,7 +140,7 @@ function page(status: number, title: string, body: string): Response {
 </head><body><main><h1>${escapeHtml(title)}</h1>${body}<p><a href="/">Return to Olibana</a></p></main></body></html>`;
   return new Response(html, {
     status,
-    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+    headers: { ...SECURITY_HEADERS, 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
   });
 }
 
@@ -172,7 +193,10 @@ async function postCheckout(options: RouterOptions, request: Request): Promise<R
 
   try {
     const { url } = options.gateway.createSession(intent);
-    return new Response(null, { status: 303, headers: { location: url, 'cache-control': 'no-store' } });
+    return new Response(null, {
+      status: 303,
+      headers: { ...SECURITY_HEADERS, location: url, 'cache-control': 'no-store' },
+    });
   } catch (error) {
     if (error instanceof CheckoutUnavailable) {
       // 503, not 500: this is a configuration state, and it is temporary by
@@ -201,7 +225,7 @@ async function postWebhook(options: RouterOptions, request: Request): Promise<Re
   if (signed === null || signed === undefined) {
     // Unsigned, stale, forged, unparseable, or no secret configured. Everything
     // downstream trusts this payload, so an unverified one never reaches it.
-    return new Response('unverified', { status: 400 });
+    return new Response('unverified', { status: 400, headers: SECURITY_HEADERS });
   }
 
   // The agreement comes from what was recorded when it was made, never from
@@ -209,18 +233,18 @@ async function postWebhook(options: RouterOptions, request: Request): Promise<Re
   // is the one the customer agreed to.
   const intent = options.stores.intents.byReference(signed.reference);
   if (intent === null) {
-    return new Response('no such checkout', { status: 404 });
+    return new Response('no such checkout', { status: 404, headers: SECURITY_HEADERS });
   }
 
   try {
     const { outcome, order } = completeCheckout(options.stores, intent, toCompletedCheckout(signed, intent.idempotencyKey));
-    return new Response(`${outcome} ${order.number}`, { status: 200 });
+    return new Response(`${outcome} ${order.number}`, { status: 200, headers: SECURITY_HEADERS });
   } catch (error) {
     if (error instanceof CheckoutUnavailable || error instanceof OrderRejected) {
       // A mismatch between what was paid and what was ordered. Retrying will
       // not fix it, so the provider is told to stop, and the payment is left
       // for a human — the money is real and the order is not.
-      return new Response(`refused: ${error.message}`, { status: 422 });
+      return new Response(`refused: ${error.message}`, { status: 422, headers: SECURITY_HEADERS });
     }
     throw error;
   }
@@ -275,7 +299,7 @@ function confirmation(order: OrderPlacement | null): Response {
  */
 async function sandbox(options: RouterOptions, request: Request): Promise<Response> {
   const sandboxConfig = options.sandbox;
-  if (sandboxConfig === undefined) return new Response('not found', { status: 404 });
+  if (sandboxConfig === undefined) return new Response('not found', { status: 404, headers: SECURITY_HEADERS });
 
   const url = new URL(request.url);
 
@@ -331,7 +355,11 @@ async function sandbox(options: RouterOptions, request: Request): Promise<Respon
 
   return new Response(null, {
     status: 303,
-    headers: { location: `${CONFIRMATION_PATH}?ref=${encodeURIComponent(reference)}`, 'cache-control': 'no-store' },
+    headers: {
+      ...SECURITY_HEADERS,
+      location: `${CONFIRMATION_PATH}?ref=${encodeURIComponent(reference)}`,
+      'cache-control': 'no-store',
+    },
   });
 }
 
@@ -343,7 +371,7 @@ export async function handleRequest(options: RouterOptions, request: Request): P
     if (request.method !== 'POST') {
       // The checkout has no page of its own: arriving here by GET means a
       // bookmark or a back button, not a customer part-way through anything.
-      return new Response(null, { status: 303, headers: { location: '/' } });
+      return new Response(null, { status: 303, headers: { ...SECURITY_HEADERS, location: '/' } });
     }
     return postCheckout(options, request);
   }
@@ -356,7 +384,7 @@ export async function handleRequest(options: RouterOptions, request: Request): P
   }
 
   if (pathname === WEBHOOK_PATH) {
-    if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
+    if (request.method !== 'POST') return new Response('method not allowed', { status: 405, headers: SECURITY_HEADERS });
     return postWebhook(options, request);
   }
 

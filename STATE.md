@@ -24,7 +24,7 @@
 | `LAST_FAILED_STATE` | None outstanding. **Cycle 10 confirmed two real defects by measurement** — concurrent writers producing two records for one idempotency key, and a crash mid-write making the whole log unreadable — plus a third found only by testing the fix, and a fourth in the test itself (a concurrency test that passed against a store with no locking at all). All fixed and re-verified. **Cycle 11** found three mutations surviving because the page tests exercised the renderer and not the wiring; two build-level tests closed that. Cycle 9 had no implementation failure. Cycle 8: redelivered webhooks were processed twice because the spec's four-part idempotency key cannot match once the order has advanced — diagnosed, corrected, recorded as ADR-008, re-verified. Cycle 7's five defects are in `VERIFICATION_LOG.md`. |
 | `ACTIVE_DECISIONS` | ADR-001…009, index at `docs/adr/README.md`. **Open:** ADR-006 (brand direction, non-blocking). |
 | `DEFERRED_ITEMS` | A live payment gateway (Human Gate) · shipping · Pinterest · media cluster · dropshipping · analytics · AI/learning loop. **Cart is not deferred; it is refused (ADR-009).** Everything not blocked by a gate is in `POST_COMPLETION_QUEUE.md` with its reason. No longer deferred: website (7), order persistence (8), catalogue (9), durability (10), pre-order run (11), placement (12), checkout boundary (13), HTTP layer (14), payment boundary and deployment adapter (15). |
-| `LAST_VERIFICATION` | V-2026-08-22-014 — see `VERIFICATION_LOG.md` |
+| `LAST_VERIFICATION` | V-2026-08-22-015 — see `VERIFICATION_LOG.md` |
 | `RECOVERY_INSTRUCTIONS` | `npm run verify` must pass (builds the site, then runs the suite). If it does not, the last verified state does not hold: read `VERIFICATION_LOG.md`, re-run, and treat any prior VERIFIED claim as invalidated until re-established. No database, no external service, and no secret is required to reach a working state — `git clone` plus Node ≥22.6 is sufficient. |
 | `RECENT_CHANGE` | **Cycle 15: the payment boundary, isolated rather than deferred.** Recorded checkout intents, a real HMAC signature verifier, a sandbox gateway that charges nothing and refuses to exist on a public origin, environment validation with three valid states and nothing between them, the order-confirmation page, and the Cloudflare Pages adapter. **Cycle 14: the HTTP layer.** `src/http/router.ts` (Fetch API, no framework), `scripts/serve.mjs` now mounts it, so the funnel is runnable rather than only unit-tested. **Cycle 13: checkout boundary and visual audit.** `src/checkout/checkout.ts` (payment boundary as an interface; the unconfigured gateway refuses rather than pretending), the purchase form on the product page, `scripts/visual-check.mjs`, ADR-009. **Cycle 12: order placement.** `src/order/placement.ts`; orders, customers, price and SKU snapshots. **Cycle 11: pre-order run.** `src/preorder/run.ts` (append-only; a run cannot open without a break-even quantity, and its terms freeze once it does), `src/preorder/close.ts` (the close outcome is derived from counted commitments, never chosen), `OrderStore.committedUnits`, run-aware product page. **Cycle 10: multi-process durability.** `src/persistence/append-log.ts` — lockfile mutual exclusion and crash-tolerant reads, shared by the order log and the catalogue. **Cycle 9: product catalogue.** `src/catalog/catalog.ts` (append-only, integrity enforced at write), `src/site/product-page.ts`, catalogue-driven routing. **Cycle 8: order persistence.** `src/order/store.ts` — append-only log, state derived by replay, store-enforced idempotency; ADR-008. **Cycle 7: the website.** `src/site/*` (markdown renderer, design tokens, route manifest, layout, builder), 10 routes, `scripts/render-check.mjs`. **Cycle 6:** independent spec-conformance verifier; terminality derived rather than duplicated; `VERIFICATION_LOG.md`. **Cycle 5:** `src/identity/ids.ts`, `src/economics/break-even.ts` + tests. Cycle 4: first code — order state machine, ADR-007. Cycle 3: ADR-005/006, `05_OUTERWEAR_SPEC_PACK.md`, HG-R1. Cycle 2: `04_…`. Cycle 1: `PROTOCOL_LOCK.md`, `STATE.md`. Zero runtime dependencies throughout. |
 | `RECENT_VERIFICATION` | V-2026-08-22-014 (V2+V3+V4+V5) — the whole selection-to-order loop over real HTTP in sandbox mode, and through the deployment adapter driven as Pages drives it. A real HMAC signature verifier, probed as an attacker would. Two tests still assert the **real** repository publishes no product and has no open run. Full history: `VERIFICATION_LOG.md`. |
@@ -79,8 +79,8 @@ plainly that a non-empty queue is not a reason to withhold completion.
 | Visual geometry verified | **VERIFIED** | 1280 / 834 / 390, five routes |
 | CSS token integrity verified | **VERIFIED** | `findUndefinedTokens` |
 | Responsive behaviour verified | **VERIFIED** | No overflow, no hidden content, no undersized target |
-| Performance checked | **PARTIAL** | Zero JS shipped and asserted. No LCP/CLS/INP measured — no deployment to measure on |
-| Security checked | **PARTIAL** | Real HMAC verification, replay window, constant-time compare, forged-signature tests. No external review |
+| Performance checked | **VERIFIED against budgets, on localhost** | LCP 32–76ms, CLS 0, 2.0–17.8KB, 0 scripts across five routes × three widths. Budgets are far tighter than the public CWV thresholds and fail when breached (M87). **INP is not measurable without a real interaction; TTFB on localhost is not TTFB on a network** |
+| Security checked | **VERIFIED at the boundaries this system has** | Real HMAC verification, replay window, constant-time compare, forged-signature tests. Security headers on **both** halves — router responses and the static `_headers` — pinned by property, not by comparing them to themselves (M83 caught that; M84–M86 pin the CSP). `no-referrer` is load-bearing: the confirmation URL carries the order's access token. **No external review, no penetration test** |
 | Error paths checked | **VERIFIED** | 400 / 404 / 405 / 422 / 503, each with a reason a person can read |
 | **Deployment path tested** | **NOT VERIFIED** | Adapter driven as Pages drives it; **Cloudflare has never run it** |
 | Regression suite passes | **VERIFIED** | `npm run verify` green every cycle |
@@ -111,8 +111,11 @@ By §31.24 this turns on one unmet required criterion: **the deployment path has
 never been executed.** That is `EXTERNAL_DEPENDENCY` (§31.19 F) — credentials —
 not an incomplete implementation.
 
-Two further criteria stand at PARTIAL (performance, security), and both are
-partial *because* nothing is deployed. They resolve with the same act.
+Performance and security were the other two open criteria and both are now
+measured rather than assumed — performance against budgets that fail when
+breached, security at every boundary this system actually has. What neither can
+reach without a deployment is stated in place: INP, real-network TTFB, and any
+external review.
 
 **Stop reason: `HUMAN_GATE` (§31.19 B).** Autonomous work inside the frozen
 scope is exhausted: what remains needs a legal entity, a payment account, or
@@ -184,10 +187,10 @@ CG-02, CG-03, CG-05, CG-06, CG-09, CG-10, CG-11 all FALSE. CG-08 now TRUE. Not r
 **Current headline:**
 
 ```
-LATEST:      V-2026-08-22-014 (V2 + V3 + V4 + V5, confirmation · sandbox · signature · deployment adapter)
+LATEST:      V-2026-08-22-015 (V1 + V3 + V4, security headers · performance budgets)
 COMMAND:     npm run verify   (build + suite; counts deliberately not restated here)
-MUTATIONS:   80 run to date · 77 caught · 1 removed at the root · 2 standing survivors, disclosed
-             (M47 unreachable defensive branch · M58 equivalent mutant)
+MUTATIONS:   87 run to date · 84 caught · 1 removed at the root · 2 standing survivors, disclosed
+             (M47 unreachable branch · M71 timing, unobservable functionally)
 HIGHEST TIER: V3 website and product page (real browser) · V2 multi-process persistence · V4 throughout
 NEVER EXERCISED: payment execution · production boundary · power-loss durability (no fsync)
 ```

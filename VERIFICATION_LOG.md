@@ -9,6 +9,23 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-22-015 · V1 + V3 + V4 · Security headers and performance budgets
+
+| | |
+| --- | --- |
+| **Target** | `SECURITY_HEADERS`, `src/site/headers.ts`, performance measurement in `scripts/visual-check.mjs` |
+| **Why** | §31.27 asks whether safe, verifiable work remains inside the frozen scope before stopping. Two Completion Gate criteria stood at PARTIAL — *Security checked* and *Performance checked* — and neither was blocked by anything external. |
+| **Defect found by looking** | Router responses carried **no security headers at all**. One part of that is a real leak rather than a hardening gap: **the confirmation URL carries the order's access token in its query string**, so a `Referer` sent to any other origin hands that token away. `no-referrer` is the only setting that cannot do it. |
+| **Both halves, one source** | Two things answer requests for this site — the router and the static build. A header set on one and not the other is a gap that depends on which half a customer reaches. `_headers` is now generated from the same constant the router sets, so they cannot drift. |
+| **Defect found in my own test** | The first header test compared the headers to themselves, which passes however they are weakened — M83 (`no-referrer` → `origin-when-cross-origin`) survived it. Rewritten to assert the properties: a referrer policy that cannot leak cross-origin, `script-src 'none'` on a site that ships no script, `frame-ancestors 'none'` on a page with a purchase form, `form-action 'self'`. |
+| **Performance, measured** | LCP, CLS, transferred bytes and script count read from the browser's own observers across five routes × three widths. **LCP 32–76ms · CLS 0 · 2.0–17.8KB · 0 scripts.** Budgets are set far tighter than the public Core Web Vitals thresholds on purpose: this site ships no JavaScript, no web fonts and no images, so anything near the public threshold means something was added that should not have been. A budget set at the threshold only fails after the damage. |
+| **Result** | **PASS** |
+| **Mutations** | M81 headers dropped from the router → caught. M82 `_headers` matching no path → caught. **M83 referrer-policy weakened → SURVIVED**, root-caused to a tautological test, now caught. M84 CSP permits script → caught. M85 the purchase form can be framed → caught. M86 a form may post to another origin → caught. M87 payload budget exceeded (200KB of filler CSS) → caught, reported at 284KB. |
+| **Limitation** | Measured on **localhost**, which removes the network: these bound what the page costs to render, not what a visitor on a slow link experiences. **INP cannot be measured without a real interaction from a real person.** No external security review and no penetration test. The CSP allows inline styles because these pages carry their own so they render even if the build never ran. |
+| **Commit** | written against `efe3391` |
+
+---
+
 ## V-2026-08-22-014 · V2 + V3 + V4 + V5 · Confirmation, sandbox, signature, deployment adapter
 
 | | |

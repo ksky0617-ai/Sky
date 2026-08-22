@@ -8,6 +8,7 @@ import { ProductionGuardError, build } from '../../src/site/build.ts';
 import { buildRoutes, countAtlasDataRows, navigation } from '../../src/site/routes.ts';
 import { escapeHtml, extractSection, renderMarkdown } from '../../src/site/markdown.ts';
 import { findConstructionTokens, findUndefinedTokens, stylesheet } from '../../src/site/styles.ts';
+import { SECURITY_HEADERS } from '../../src/http/router.ts';
 
 const outDir = mkdtempSync(resolve(tmpdir(), 'olibana-site-'));
 const result = build({ outDir });
@@ -252,4 +253,74 @@ test('the purchase button states a colour and a background, and they differ', ()
   assert.ok(colour, 'the button sets no text colour');
   assert.ok(background, 'the button sets no background');
   assert.notEqual(colour, background, 'the button paints its label in its own background colour');
+});
+
+test('every router response carries the security headers, including the redirects', async () => {
+  // The confirmation URL carries the order's access token in its query string.
+  // A Referer sent to any other origin would hand that token away, so
+  // no-referrer is load-bearing rather than decorative.
+  const { CHECKOUT_PATH, handleRequest, SECURITY_HEADERS } = await import('../../src/http/router.ts');
+  const { UnconfiguredGateway } = await import('../../src/checkout/checkout.ts');
+  const { UnconfiguredVerifier } = await import('../../src/http/router.ts');
+  const { Catalog } = await import('../../src/catalog/catalog.ts');
+  const { PreorderRunStore } = await import('../../src/preorder/run.ts');
+  const { OrderStore } = await import('../../src/order/store.ts');
+  const { IntentStore } = await import('../../src/checkout/intents.ts');
+
+  const stamp = Math.random().toString(36).slice(2);
+  const options = {
+    stores: {
+      catalog: new Catalog(resolve(outDir, `hdr-cat-${stamp}.jsonl`)),
+      runs: new PreorderRunStore(resolve(outDir, `hdr-runs-${stamp}.jsonl`)),
+      orders: new OrderStore(resolve(outDir, `hdr-orders-${stamp}.jsonl`)),
+      intents: new IntentStore(resolve(outDir, `hdr-intents-${stamp}.jsonl`)),
+    },
+    gateway: new UnconfiguredGateway(),
+    verifier: new UnconfiguredVerifier(),
+  };
+
+  const requests = [
+    new Request(`https://olibana.test${CHECKOUT_PATH}`),                       // 303 home
+    new Request(`https://olibana.test${CHECKOUT_PATH}`, { method: 'POST', body: '' }),  // 422
+    new Request('https://olibana.test/order/confirmation?ref=nothing'),        // 202
+    new Request('https://olibana.test/webhooks/payment', { method: 'POST', body: '{}' }), // 400
+    new Request('https://olibana.test/webhooks/payment'),                      // 405
+  ];
+
+  for (const request of requests) {
+    const response = await handleRequest(options, request);
+    assert.ok(response !== null, `${request.method} ${request.url} was not routed`);
+    const where = `${request.method} ${new URL(request.url).pathname} (${response.status})`;
+    for (const name of Object.keys(SECURITY_HEADERS)) {
+      assert.equal(response.headers.get(name), SECURITY_HEADERS[name], `${where} is missing ${name}`);
+    }
+  }
+});
+
+test('the security headers assert properties, not whatever they currently say', () => {
+  // Comparing the headers to themselves passes however they are weakened. These
+  // assert the three things they exist for.
+  assert.ok(
+    ['no-referrer', 'same-origin'].includes(SECURITY_HEADERS['referrer-policy']),
+    `referrer-policy is "${SECURITY_HEADERS['referrer-policy']}", which can send the confirmation ` +
+      'URL — and with it the order access token — to another origin',
+  );
+  const csp = SECURITY_HEADERS['content-security-policy'];
+  assert.match(csp, /script-src 'none'/, 'the CSP permits script on a site that ships none');
+  assert.match(csp, /frame-ancestors 'none'/, 'the purchase form can be framed');
+  assert.match(csp, /form-action 'self'/, 'a form could post somewhere else');
+  assert.equal(SECURITY_HEADERS['x-content-type-options'], 'nosniff');
+});
+
+test('the static build ships the same headers the router sets', () => {
+  // Two halves answer requests for this site. A header set on one and not the
+  // other is a gap that depends on which half a customer happened to reach.
+  const stamp = Math.random().toString(36).slice(2);
+  const out = resolve(tmpdir(), `olibana-hdrs-${stamp}`);
+  build({ outDir: out });
+  const file = readFileSync(resolve(out, '_headers'), 'utf8');
+  assert.match(file, /^\/\*$/m, 'the _headers file matches no paths');
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    assert.ok(file.includes(`${name}: ${value}`), `_headers is missing ${name}`);
+  }
 });
