@@ -21,6 +21,7 @@
 
 import { escapeHtml } from './markdown.ts';
 import type { Measurement, ProductRevision, Variant } from '../catalog/catalog.ts';
+import type { PreorderWindow } from '../preorder/run.ts';
 
 export function formatPrice(amount: number, currency: string): string {
   // Minor units to major. Zero-decimal currencies keep their integer form.
@@ -69,7 +70,26 @@ function measurementsTable(measurements: readonly Measurement[], sizes: readonly
   return `<div class="table-scroll"><table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-export function renderProductBody(product: ProductRevision): string {
+/** A date the customer can act on, not a timestamp. */
+function stateDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+  });
+}
+
+/**
+ * Renders a product page.
+ *
+ * `run` is the open pre-order run for this garment, or null when none is open.
+ * With a run the page states two real dates — when the window closes and when
+ * the garment is promised — instead of an approximate number of days. Both come
+ * from the recorded run, which cannot be opened without them (ADR-003), so this
+ * page cannot state a window that nobody committed to.
+ */
+export function renderProductBody(
+  product: ProductRevision,
+  run: PreorderWindow | null = null,
+): string {
   const sizes = [...new Set(product.variants.map((v) => v.size))];
   const price = priceRange(product.variants);
   const lead = product.productionLeadDays;
@@ -86,17 +106,23 @@ export function renderProductBody(product: ProductRevision): string {
   if (product.materials.length > 0) {
     parts.push(`<dt>Material</dt><dd>${product.materials.map((m) => escapeHtml(m)).join(', ')}</dd>`);
   }
+  const approximate = lead === null ? '' : ` — dispatched about ${lead} days after the order window closes`;
   parts.push(
-    `<dt>Availability</dt><dd>Pre-order${
-      lead === null ? '' : ` — dispatched about ${lead} days after the order window closes`
-    }</dd>`,
+    run === null
+      ? `<dt>Availability</dt><dd>Pre-order${approximate}</dd>`
+      : `<dt>Order window</dt><dd>Closes ${escapeHtml(stateDate(run.closesAt))}</dd>` +
+        `<dt>Dispatched by</dt><dd>${escapeHtml(stateDate(run.promisedShipBy))}</dd>`,
   );
   parts.push('</dl>');
 
   // ADR-003: the window is disclosed before the purchase action, not after.
+  const window =
+    run === null
+      ? `the garment is made afterwards${approximate === '' ? '' : `, and dispatched about ${lead} days after the order window closes`}`
+      : `the garment is made afterwards, and dispatched by ${escapeHtml(stateDate(run.promisedShipBy))}`;
   parts.push(
     `<div class="state"><p><strong>This is a pre-order.</strong> Payment is taken when you order; ` +
-      `the garment is made afterwards${lead === null ? '' : `, and dispatched about ${lead} days after the order window closes`}. ` +
+      `${window}. ` +
       `If the run does not reach its minimum, every order is refunded in full.</p></div>`,
   );
 

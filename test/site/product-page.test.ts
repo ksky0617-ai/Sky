@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 import { build } from '../../src/site/build.ts';
-import { buildRoutes, CATALOG_PATH } from '../../src/site/routes.ts';
+import { buildRoutes, CATALOG_PATH, RUNS_PATH } from '../../src/site/routes.ts';
 import { formatPrice, renderProductBody } from '../../src/site/product-page.ts';
+import { PreorderRunStore, type RunRevision } from '../../src/preorder/run.ts';
 import { Catalog, variant, type ProductInput } from '../../src/catalog/catalog.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-pp-'));
@@ -135,4 +136,123 @@ test('a product page passes the same structural checks as every other page', () 
   assert.equal((page.match(/<h1[ >]/g) ?? []).length, 1);
   assert.ok(!/<script/i.test(page));
   assert.match(page, /<link rel="canonical" href="\/products\/olb-ct-001">/);
+});
+
+// --- the page and the pre-order run -------------------------------------
+
+/** A run whose terms exist. Fixture only — no run has ever been opened. */
+const runFixture = (overrides: Partial<RunRevision> = {}): RunRevision => ({
+  eventId: 'EVT_run',
+  runId: 'RUN_fixture',
+  productId: 'PRD_fixture',
+  status: 'OPEN',
+  opensAt: '2026-09-01T00:00:00.000Z',
+  closesAt: '2026-09-30T00:00:00.000Z',
+  minimumQuantity: 20,
+  targetQuantity: 40,
+  productionLeadDays: 60,
+  promisedShipBy: '2026-12-01T00:00:00.000Z',
+  supplierQuoteId: 'QUOTE_fixture',
+  recordedAt: '2026-08-22T00:00:00.000Z',
+  actor: 'test',
+  ...overrides,
+});
+
+test('with an open run the page states real dates, not an approximate number of days', () => {
+  const body = renderProductBody(
+    { ...fixture(), eventId: 'EVT_x', recordedAt: 'now' },
+    runFixture(),
+  );
+  assert.match(body, /Closes 30 September 2026/);
+  assert.match(body, /1 December 2026/);
+  assert.ok(
+    !/about 60 days/.test(body),
+    'an approximation was shown alongside a date the run actually promises',
+  );
+});
+
+test('without a run the page falls back to the approximate window, never to a made-up date', () => {
+  const body = renderProductBody({ ...fixture(), eventId: 'EVT_x', recordedAt: 'now' }, null);
+  assert.match(body, /about 60 days after the order window closes/);
+  assert.ok(!/Closes /.test(body), 'a close date was stated with no run to promise it');
+});
+
+test('the refund promise survives whether or not a run is open', () => {
+  // If the run misses its minimum nothing is produced, so this sentence is the
+  // one that has to be true in both states.
+  for (const run of [null, runFixture()]) {
+    const body = renderProductBody({ ...fixture(), eventId: 'EVT_x', recordedAt: 'now' }, run);
+    assert.match(body, /refunded in full/);
+  }
+});
+
+test('a built page carries the run\'s dates — the wiring, not the renderer', () => {
+  // The renderer tests above pass a run in by hand. This one records a real run
+  // in a real file and reads the emitted HTML, which is the only way to catch
+  // the build forgetting to look the run up at all.
+  const stamp = Math.random().toString(36).slice(2);
+  const catalogPath = resolve(dir, `wired-cat-${stamp}.jsonl`);
+  const runsPath = resolve(dir, `wired-runs-${stamp}.jsonl`);
+  new Catalog(catalogPath).record(fixture());
+
+  const runs = new PreorderRunStore(runsPath);
+  const input = {
+    runId: 'RUN_wired',
+    productId: fixture().productId,
+    opensAt: '2026-09-01T00:00:00.000Z',
+    closesAt: '2026-09-30T00:00:00.000Z',
+    minimumQuantity: 20,
+    targetQuantity: 40,
+    productionLeadDays: 60,
+    promisedShipBy: '2026-12-01T00:00:00.000Z',
+    supplierQuoteId: 'QUOTE_fixture',
+    actor: 'test',
+  };
+  runs.record({ ...input, status: 'DRAFT' as const });
+  runs.record({ ...input, status: 'OPEN' as const });
+
+  const out = resolve(dir, `wired-out-${stamp}`);
+  build({ outDir: out, catalogPath, runsPath });
+  const html = readFileSync(resolve(out, 'products/olb-ct-001/index.html'), 'utf8');
+
+  assert.match(html, /Closes 30 September 2026/, 'the build did not read the open run');
+  assert.match(html, /dispatched by 1 December 2026/);
+  assert.ok(!/about 60 days/.test(html), 'an approximation survived alongside a real promise');
+});
+
+test('a closed run is not shown as if it were open', () => {
+  const stamp = Math.random().toString(36).slice(2);
+  const catalogPath = resolve(dir, `closed-cat-${stamp}.jsonl`);
+  const runsPath = resolve(dir, `closed-runs-${stamp}.jsonl`);
+  new Catalog(catalogPath).record(fixture());
+
+  const runs = new PreorderRunStore(runsPath);
+  const input = {
+    runId: 'RUN_closed',
+    productId: fixture().productId,
+    opensAt: '2026-09-01T00:00:00.000Z',
+    closesAt: '2026-09-30T00:00:00.000Z',
+    minimumQuantity: 20,
+    targetQuantity: 40,
+    productionLeadDays: 60,
+    promisedShipBy: '2026-12-01T00:00:00.000Z',
+    supplierQuoteId: 'QUOTE_fixture',
+    actor: 'test',
+  };
+  runs.record({ ...input, status: 'DRAFT' as const });
+  runs.record({ ...input, status: 'OPEN' as const });
+  runs.record({ ...input, status: 'CLOSED_UNDERSUBSCRIBED' as const });
+
+  const out = resolve(dir, `closed-out-${stamp}`);
+  build({ outDir: out, catalogPath, runsPath });
+  const html = readFileSync(resolve(out, 'products/olb-ct-001/index.html'), 'utf8');
+
+  assert.ok(!/Closes 30 September 2026/.test(html), 'a closed run was offered as an open window');
+  assert.match(html, /about 60 days after the order window closes/);
+});
+
+test('THE CURRENT REPOSITORY has no open run', () => {
+  // Same honesty guard as the catalogue: no run exists, so no page can state a
+  // window. Changing this requires recording a run, deliberately.
+  assert.equal(new PreorderRunStore(RUNS_PATH).open().length, 0);
 });

@@ -9,6 +9,25 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-15-011 · V1 + V2 + V4 + V5 · Pre-order run
+
+| | |
+| --- | --- |
+| **Target** | `src/preorder/run.ts`, `src/preorder/close.ts`, `OrderStore.committedUnits`, run-aware product page |
+| **Why** | The order state machine's `PREORDER_HELD` guards read `committedQuantity` and `minimumQuantity` **from caller-supplied context**. A guard whose inputs are chosen by the party it is guarding is not a guard. This is the entity that supplies both from recorded facts. |
+| **The honesty constraint** | `minimumQuantity` is the break-even quantity from a supplier quotation. **No quotation exists, so it is null, and a run with a null minimum cannot open.** No pre-order can open today, and the code says so rather than carrying a plausible placeholder. `test('THE CURRENT REPOSITORY has no open run')` asserts this against the real repository path. |
+| **What is derived, not stored** | `committedUnits` is **counted from the order log**. A stored counter drifts: a cancellation that forgets to decrement leaves a run believing it can pay for fabric it cannot. Here a cancelled order simply stops being in `PREORDER_HELD` and stops counting — there is no second step to forget, verified by M45. |
+| **What the caller cannot choose** | `closeRun` takes no outcome argument. Committed vs minimum decides it. A run that missed its minimum cannot be recorded as if it had reached one, and `CLOSED_UNDERSUBSCRIBED` is terminal — nothing goes into production. |
+| **Rule added mid-cycle, from a surviving mutation** | M47 (close a minimum-less run as REACHED) survived because that branch is unreachable. Chasing why exposed a **real** hole next to it: nothing stopped the terms of an **open** run from being changed under the people who had already committed. Lowering `minimumQuantity` mid-run would turn an undersubscribed run into a "successful" one and put a garment into production the quotation says cannot be paid for. The commercial terms are now frozen once a run opens. |
+| **Observed** | 179/179 pass. Two logs on disk, joined and reloaded: commitments counted across instances, a cancellation removing its own commitment, and a close surviving reload. |
+| **Result** | **PASS** |
+| **Mutations** | M41 close boundary `>=`→`>` → caught by 2. M42 open without a break-even → caught. M43 undersubscribed run may produce anyway → caught by 2. M44 unstated quantity counts as 0 → caught. M45 cancelled orders keep counting → caught. M46 two open runs per garment → caught. **M47 → SURVIVED, root cause identified as an unreachable defensive branch**; the rule it guards is verified directly against `closeOutcome`, and the reachable gap it exposed is now M48. M48 terms freeze removed → caught. M49/M50 freeze **over**-applied (to DRAFT, to `targetQuantity`) → both caught, so the rule is pinned in both directions. M51/M52/M54 page wiring → **all three initially SURVIVED**. |
+| **Defect found in my own tests (VERIFICATION attribution)** | M51/M52/M54 survived because every page test called the renderer directly with a hand-built run. That is precisely the "works on mock data" failure the directive refuses to count as complete: the renderer was verified and the **wiring was not**. Two build-level tests now record a real run in a real file and read the emitted HTML; all three mutations are caught. `promisedShipBy ?? closesAt` — the fallback M52 exploited — was deleted rather than tested, by narrowing the page's input to a `PreorderWindow` that has no nulls in it. |
+| **Limitation** | No order can yet be *placed* — there is no cart and no checkout, so `committedUnits` counts orders that only a test can create. The run transition table is **inferred**: SPEC Part 2.2 lists run statuses but gives no table, and what is encoded is only what the pre-order model itself requires. That inference is not spec-verified and is disclosed here rather than presented as transcription. |
+| **Commit** | written against `cf66d95` |
+
+---
+
 ## V-2026-08-15-010 · V2 + V4 + V5 · Concurrency and crash durability
 
 | | |

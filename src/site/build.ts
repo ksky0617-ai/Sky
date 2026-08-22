@@ -23,6 +23,7 @@ export interface BuildOptions {
   readonly origin?: string;
   /** Overridable so tests can build against a temporary catalogue. */
   readonly catalogPath?: string;
+  readonly runsPath?: string;
 }
 
 export interface BuildResult {
@@ -33,7 +34,7 @@ export interface BuildResult {
 
 export class ProductionGuardError extends Error {}
 
-export function build({ outDir, production = false, origin = '', catalogPath }: BuildOptions): BuildResult {
+export function build({ outDir, production = false, origin = '', catalogPath, runsPath }: BuildOptions): BuildResult {
   if (production) {
     const leaked = findConstructionTokens(stylesheet);
     if (leaked.length > 0) {
@@ -48,7 +49,7 @@ export function build({ outDir, production = false, origin = '', catalogPath }: 
   rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
 
-  const routes = buildRoutes(catalogPath);
+  const routes = buildRoutes(catalogPath, runsPath);
   const nav = navigation(routes);
   const written: string[] = [];
   let bytes = 0;

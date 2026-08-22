@@ -19,6 +19,7 @@ import { resolve } from 'node:path';
 import { extractSection, renderMarkdown } from './markdown.ts';
 import { renderProductBody } from './product-page.ts';
 import { Catalog, type ProductRevision } from '../catalog/catalog.ts';
+import { PreorderRunStore, preorderWindow, type PreorderWindow } from '../preorder/run.ts';
 
 export interface Route {
   /** URL path. */
@@ -271,13 +272,13 @@ function productSlug(product: ProductRevision): string {
   return product.code.toLowerCase();
 }
 
-function productPage(product: ProductRevision): Route {
+function productPage(product: ProductRevision, run: PreorderWindow | null): Route {
   return {
     path: `/products/${productSlug(product)}`,
     file: `products/${productSlug(product)}/index.html`,
     title: product.name,
     description: product.summary,
-    body: renderProductBody(product),
+    body: renderProductBody(product, run),
   };
 }
 
@@ -306,6 +307,9 @@ function shopPage(products: readonly ProductRevision[]): Route {
 /** Default catalogue location. Absent until a product is recorded. */
 export const CATALOG_PATH = resolve(ROOT, 'data/catalog.jsonl');
 
+/** Default pre-order run location. Absent until a run is recorded. */
+export const RUNS_PATH = resolve(ROOT, 'data/preorder-runs.jsonl');
+
 /**
  * Routes that exist because their content exists.
  *
@@ -316,13 +320,20 @@ export const CATALOG_PATH = resolve(ROOT, 'data/catalog.jsonl');
  *
  * Also absent: /journal (no article written), /contact (no address).
  */
-export function buildRoutes(catalogPath: string = CATALOG_PATH): readonly Route[] {
+export function buildRoutes(
+  catalogPath: string = CATALOG_PATH,
+  runsPath: string = RUNS_PATH,
+): readonly Route[] {
   const published = new Catalog(catalogPath).published();
+  const runs = new PreorderRunStore(runsPath);
 
   return [
     homePage(),
     ...(published.length > 0 ? [shopPage(published)] : []),
-    ...published.map(productPage),
+    ...published.map((p) => {
+      const open = runs.openRunFor(p.productId);
+      return productPage(p, open === null ? null : preorderWindow(open));
+    }),
     naturePage(),
     ...ATLASES.map(atlasPage),
     philosophyPage(),

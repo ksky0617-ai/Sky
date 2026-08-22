@@ -54,6 +54,19 @@ export interface OrderEvent {
   readonly occurredAt: string;
   readonly accepted: boolean;
   readonly rejectionReason?: string;
+  /**
+   * The pre-order run this order commits to — SPEC Part 2.2, `Order.preorder_run_id`.
+   * Absent for orders that are not pre-orders.
+   */
+  readonly preorderRunId?: string;
+  /**
+   * Units this order commits. SPEC puts quantity on OrderItem; until that
+   * entity exists this event is its ONLY encoding, so there is nothing here to
+   * drift from. When OrderItem lands, this derivation moves there and this
+   * field must stop being read — two places holding one quantity is exactly the
+   * defect this codebase keeps removing.
+   */
+  readonly quantity?: number;
   /** Traceability chain — SPEC Part 4.3. Cannot be reconstructed later. */
   readonly sessionId?: string;
   readonly signalId?: string;
@@ -69,6 +82,8 @@ export interface AppendRequest {
   readonly sessionId?: string;
   readonly signalId?: string;
   readonly occurredAt?: Date;
+  readonly preorderRunId?: string;
+  readonly quantity?: number;
 }
 
 export type AppendResult =
@@ -241,7 +256,32 @@ export class OrderStore {
       ...(record.rejectionReason !== undefined ? { rejectionReason: record.rejectionReason } : {}),
       ...(request.sessionId !== undefined ? { sessionId: request.sessionId } : {}),
       ...(request.signalId !== undefined ? { signalId: request.signalId } : {}),
+      ...(request.preorderRunId !== undefined ? { preorderRunId: request.preorderRunId } : {}),
+      ...(request.quantity !== undefined ? { quantity: request.quantity } : {}),
     };
+  }
+
+  /**
+   * Units currently committed to a pre-order run.
+   *
+   * COUNTED, never stored. A stored counter is a second encoding of the same
+   * fact, and it drifts: a cancellation that forgets to decrement leaves a run
+   * believing it can pay for fabric it cannot. Here a cancelled order simply
+   * stops being in PREORDER_HELD and stops counting, with no separate step that
+   * can be forgotten.
+   *
+   * An order that reached PREORDER_HELD without a quantity contributes 1 — the
+   * order exists, so it commits at least one garment, and treating a missing
+   * quantity as 0 would let a run under-count what it owes.
+   */
+  committedUnits(runId: string): number {
+    const held = this.orderIds().filter((orderId) => this.status(orderId) === 'PREORDER_HELD');
+    return held.reduce((total, orderId) => {
+      const commitment = this.eventsFor(orderId)
+        .filter((event) => event.accepted && event.preorderRunId === runId)
+        .at(-1);
+      return commitment === undefined ? total : total + (commitment.quantity ?? 1);
+    }, 0);
   }
 }
 
