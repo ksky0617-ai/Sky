@@ -9,6 +9,28 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-22-012 · V1 + V2 + V3 + V4 + V5 · Checkout boundary and visual audit
+
+| | |
+| --- | --- |
+| **Target** | `src/order/placement.ts`, `src/checkout/checkout.ts`, the purchase form, `scripts/visual-check.mjs` |
+| **Why** | The order path had no beginning. `committedUnits` counted orders nothing could create, and the product page had no purchase action at all. |
+| **Spec conflict resolved** | The directive's Completion Gate asks for `Cart integrated`; SPEC §2.3 lists a cart under 만들지 않는 것 with its reason. Recorded as **ADR-009** and resolved toward the repository: the criterion becomes *selection-to-order path integrated*. Function delivered in full; only the entity is refused. |
+| **Where the order is created** | On the webhook, not the form. ADR-004's *hosted* checkout means **Stripe collects the address**, and an order requires one. Creating the order first would leave abandoned checkouts as orders in a log that `committedUnits` reads. |
+| **Payment boundary** | `PaymentGateway` is an interface with one method and no SDK, no secret, no network call. `UnconfiguredGateway` **refuses in as many words** — a stub returning a plausible URL would make a broken funnel pass a funnel audit. Executing a real payment stays a Human Gate (P0-7, HG-04). |
+| **Observed** | 225/225 pass. Full path on real files: selection → intent → completion → order placed, priced, snapshotted, PAID, reloaded. Redelivered payment: one order, one payment. Wrong amount: refused, nothing recorded. |
+| **Result** | **PASS** for everything either side of the payment. The payment itself is **UNVERIFIED and unexecutable** by design. |
+| **Mutations** | M55 placement without the lock → caught by 3. M56 duplicate submission → caught by 2. M57 order with no open run → caught by 2. M59 unpublished garment sold → **SURVIVED**, root-caused to my own fixture (no variants, so it was refused before status was checked); fixture corrected, now caught. M60 returning customer split in two → caught by 2. M61 order numbers counted rather than continued → **SURVIVED**; a gap is unreachable through the API, so the test now seeds the log directly, which is reachable — now caught. **M58 is an equivalent mutant**: copying is enforced by the record shape, not by a branch, and is stated as such rather than counted as coverage. |
+| **VISUAL — two defects no unit test could see** | Both found by rendering, both on floors ADR-001 puts outside the tradeable set. **(1)** The purchase button's label was written `var(--surface-page)` — a token that does not exist in this system. An undefined `var()` is silent: it fell back to the inherited colour and rendered **#1A1A1A on #1A1A1A, a 1:1 contrast ratio**, on the one control that completes a purchase. Every test passed. A screenshot showed a black bar with no words on it. **(2)** Navigation links rendered **18px** tall and footer links **15px**, under **WCAG 2.2 SC 2.5.8 (AA) 24×24 CSS px**. These are list links, not links inside a sentence, so the inline exception does not apply. |
+| **VISUAL — a third, from adversarial audit** | The header carried **two controls with the same label and the same destination** — the wordmark and the first navigation item, both "OLIBANA", both linking `/`. Invisible in the manifest, where they live in different files; obvious in a screenshot. Removed. |
+| **Fixes** | Real tokens (`--content-inverse` on `--surface-inverse`, measured at **17.4:1**). Padding with compensating negative margin lifts nav to **32px** and footer to **31px** with the header's rhythm unchanged (home mobile document height moved 3409→3419px). Home dropped from the navigation manifest. |
+| **What stops the recurrence** | Three checks, each mutation-verified against the defect it exists for: `findUndefinedTokens` (unit — a `var()` with nothing behind it; fallbacks are legitimate and ignored, and CSS comments are stripped so quoting the broken token in prose does not read as using it); a unit test that the purchase button's colour and background are different tokens; and **`scripts/visual-check.mjs`** (V3) which builds a fixture product and open run, serves them, and measures target size and computed button contrast at 1280/834/390. M62 (label repainted in its background) → caught, 1:1 reported. M63 (nav padding removed) → caught, 18px reported at all three widths. |
+| **Responsive** | Product, shop and home at desktop 1280, tablet 834, mobile 390: no horizontal overflow, no content at opacity 0, no target under 24px, purchase button legible at every width. |
+| **Limitation** | The fixture garment does not exist and nothing is published — the real build still emits no `/shop` and no product page, asserted by test. Contrast was measured on the purchase button only, not on every text pair. Screen readers, real devices and Core Web Vitals remain unverified. **No payment has ever been executed**, and none can be until a gateway exists. |
+| **Commit** | written against `bfede0d` |
+
+---
+
 ## V-2026-08-15-011 · V1 + V2 + V4 + V5 · Pre-order run
 
 | | |

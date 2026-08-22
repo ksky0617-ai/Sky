@@ -144,7 +144,11 @@ function homePage(): Route {
     title: 'Olibana',
     description: 'A design practice deriving form from the measured structure of nature.',
     body,
-    nav: { label: 'Olibana', order: 1 },
+    // No nav entry. The wordmark in the header is already a link to this page,
+    // and a second control with the same label and the same destination costs a
+    // navigation slot while weakening what the wordmark is for. A browser
+    // screenshot is what made the duplication obvious — in the manifest the two
+    // live in different files.
   };
 }
 

@@ -147,11 +147,24 @@ header.site a.wordmark {
   font-size: var(--text-lg); letter-spacing: 0.22em;
   text-transform: uppercase; text-decoration: none; color: var(--content-primary);
 }
-nav.primary ul { display: flex; flex-wrap: wrap; gap: var(--space-5); list-style: none; margin: 0; padding: 0; }
+/* The negative vertical margin cancels the padding below, so the links grow a
+   hit area without the header growing a gap. Measured, not assumed: see the
+   target-size note on the anchors themselves. */
+nav.primary ul {
+  display: flex; flex-wrap: wrap; gap: var(--space-5);
+  list-style: none; margin: -6px 0; padding: 0;
+}
 nav.primary a {
   font-size: var(--text-sm); letter-spacing: 0.14em; text-transform: uppercase;
   text-decoration: none; color: var(--content-secondary);
-  padding-bottom: 2px; border-bottom: 1px solid transparent;
+  /* WCAG 2.2 SC 2.5.8 Target Size (Minimum), AA: 24x24 CSS px. These are list
+     links, not links inside a sentence, so the inline exception does not apply
+     to them. At the type size the brand uses they render 18px tall, which a
+     browser measurement caught and no unit test could have — nothing in the
+     suite looked at geometry. The padding buys the height; the border sits at
+     the text, not at the edge of the hit area. */
+  display: inline-block; padding: 6px 0 4px;
+  border-bottom: 1px solid transparent;
 }
 nav.primary a:hover, nav.primary a[aria-current="page"] {
   color: var(--content-primary); border-bottom-color: var(--line-rule);
@@ -212,13 +225,65 @@ dl.facts dd { margin: 0; }
 }
 .state p:last-child { margin-bottom: 0; }
 
+/* Purchase form — 02_BRAND_EXPERIENCE_SYSTEM.md: the decision layer.
+
+   No JavaScript. It is an HTML form, so it works before any script would have
+   loaded and keeps working if none ever does. The controls inherit the page's
+   type and rules rather than the browser's defaults, because a native select
+   next to this typography reads as a different site.
+
+   Touch targets are 44px minimum (WCAG 2.5.8), which is a floor ADR-001 places
+   outside the tradeable set, not a preference. */
+form.order { max-width: var(--measure); margin: var(--space-6) 0; }
+form.order .field { margin-bottom: var(--space-5); }
+form.order label {
+  display: block; margin-bottom: var(--space-2);
+  color: var(--content-secondary); font-size: var(--text-sm);
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+form.order select,
+form.order input {
+  width: 100%; min-height: 44px; box-sizing: border-box;
+  padding: var(--space-3);
+  font: inherit; font-size: var(--text-base); color: var(--content-primary);
+  background: transparent; border: 1px solid var(--line-hairline); border-radius: 0;
+}
+form.order .hint {
+  display: block; margin-top: var(--space-2);
+  color: var(--content-tertiary); font-size: var(--text-sm);
+}
+form.order button {
+  min-height: 48px; width: 100%; padding: var(--space-3) var(--space-6);
+  font: inherit; font-size: var(--text-sm);
+  letter-spacing: 0.14em; text-transform: uppercase;
+  /* content-inverse against surface-inverse. An earlier version of this rule
+     said var(--surface-page), which is not a token in this system: the
+     undefined variable fell back to the inherited colour, and the label
+     rendered #1A1A1A on #1A1A1A — a 1:1 contrast ratio on the one control that
+     completes a purchase. Every unit test passed. A screenshot caught it. */
+  color: var(--content-inverse); background: var(--surface-inverse);
+  border: 1px solid var(--surface-inverse); border-radius: 0; cursor: pointer;
+}
+form.order button:hover { background: var(--content-secondary); border-color: var(--content-secondary); }
+@media (min-width: 641px) {
+  /* Wide enough to sit inline: the field row reads as one decision. */
+  form.order .row { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-5); }
+  form.order .row .field { margin-bottom: var(--space-5); }
+  form.order button { width: auto; min-width: 16rem; }
+}
+
 footer.site {
   border-top: 1px solid var(--line-hairline);
   padding: var(--space-7) 0 var(--space-9);
   color: var(--content-tertiary); font-size: var(--text-sm);
 }
-footer.site ul { display: flex; flex-wrap: wrap; gap: var(--space-5); list-style: none; margin: 0 0 var(--space-4); padding: 0; }
-footer.site a { color: var(--content-secondary); }
+footer.site ul {
+  display: flex; flex-wrap: wrap; gap: var(--space-5);
+  list-style: none; margin: -5px 0 calc(var(--space-4) - 5px); padding: 0;
+}
+/* Same floor as the primary navigation, for the same reason: these render 15px
+   tall at the footer's type size. */
+footer.site a { color: var(--content-secondary); display: inline-block; padding: 5px 0; }
 
 /* Motion — 04_MOTION_LANGUAGE.md.
 
@@ -259,4 +324,28 @@ footer.site a { color: var(--content-secondary); }
 export function findConstructionTokens(css: string): string[] {
   const matches = css.matchAll(/--construct-\d{3}/g);
   return [...new Set([...matches].map((m) => m[0]))].sort();
+}
+
+/**
+ * Every custom property that is *used* but never *defined*.
+ *
+ * An undefined `var(--x)` does not fail loudly. It falls back to the inherited
+ * value, which for a colour is usually the surrounding text colour — so a
+ * button whose label was meant to be inverse renders the label in the same
+ * colour as its own background. That happened: `var(--surface-page)`, a token
+ * that does not exist in this system, put the purchase button's text at a 1:1
+ * contrast ratio while every test passed.
+ *
+ * Fallbacks (`var(--x, black)`) are legitimate and are not reported: the point
+ * is a reference with nothing behind it at all.
+ */
+export function findUndefinedTokens(css: string): string[] {
+  // Comments are stripped first: this file explains the bug that motivated the
+  // check, and quoting the broken token in prose must not read as using it.
+  const rules = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const defined = new Set([...rules.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]));
+  const used = [...rules.matchAll(/var\(\s*(--[a-z0-9-]+)\s*([,)])/g)]
+    .filter((m) => m[2] === ')')
+    .map((m) => m[1]);
+  return [...new Set(used.filter((name) => !defined.has(name)))].sort();
 }

@@ -70,6 +70,58 @@ function measurementsTable(measurements: readonly Measurement[], sizes: readonly
   return `<div class="table-scroll"><table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+/**
+ * The purchase form.
+ *
+ * A plain HTML form, no JavaScript: it works before any script would have
+ * loaded, and this site ships none. The SKU is derived from the variant the
+ * customer picks, so the value posted is one the catalogue already holds rather
+ * than one assembled in the browser.
+ *
+ * The email field is here because ADR-004's hosted checkout needs somewhere to
+ * send the confirmation. The address is NOT here — the gateway collects it, and
+ * asking twice for something we then ignore is a form that lies about what it
+ * does with an answer.
+ */
+function orderForm(product: ProductRevision, sizes: readonly string[]): string {
+  const sellable = product.variants.filter((v) => v.priceAmount !== null);
+  if (sellable.length === 0) return '';
+
+  const options = sellable
+    .map((v) => {
+      const label = sizes.length > 1 ? `${v.size} — ${formatVariantPrice(v)}` : formatVariantPrice(v);
+      return `<option value="${escapeHtml(v.sku)}">${escapeHtml(label)}</option>`;
+    })
+    .join('');
+
+  return [
+    '<h2>Reserve</h2>',
+    '<form class="order" method="post" action="/checkout">',
+    `<input type="hidden" name="productId" value="${escapeHtml(product.productId)}">`,
+    '<div class="row">',
+    '<div class="field">',
+    '<label for="sku">Size</label>',
+    `<select id="sku" name="sku" required>${options}</select>`,
+    '</div>',
+    '<div class="field">',
+    '<label for="quantity">Quantity</label>',
+    '<input id="quantity" name="quantity" type="number" inputmode="numeric" min="1" max="10" value="1" required>',
+    '</div>',
+    '</div>',
+    '<div class="field">',
+    '<label for="email">Email</label>',
+    '<input id="email" name="email" type="email" autocomplete="email" required>',
+    '<span class="hint">Where the order confirmation goes. Your address is collected at payment.</span>',
+    '</div>',
+    '<button type="submit">Continue to payment</button>',
+    '</form>',
+  ].join('\n');
+}
+
+function formatVariantPrice(variant: Variant): string {
+  return formatPrice(variant.priceAmount as number, variant.priceCurrency as string);
+}
+
 /** A date the customer can act on, not a timestamp. */
 function stateDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', {
@@ -125,6 +177,13 @@ export function renderProductBody(
       `${window}. ` +
       `If the run does not reach its minimum, every order is refunded in full.</p></div>`,
   );
+
+  // The purchase action. Present only when a run is open, because only then is
+  // there a window to promise — a button that cannot complete is worse than no
+  // button, and the checkout would refuse it anyway (ADR-009).
+  if (run !== null) {
+    parts.push(orderForm(product, sizes));
+  }
 
   parts.push('<h2>Measurements</h2>');
   parts.push('<div class="lede"><p>Garment measurements, taken flat, in centimetres.</p></div>');

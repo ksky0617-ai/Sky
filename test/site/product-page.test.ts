@@ -256,3 +256,89 @@ test('THE CURRENT REPOSITORY has no open run', () => {
   // window. Changing this requires recording a run, deliberately.
   assert.equal(new PreorderRunStore(RUNS_PATH).open().length, 0);
 });
+
+// --- the purchase action -------------------------------------------------
+
+test('an open run puts a real purchase form on the page', () => {
+  const body = renderProductBody(
+    { ...fixture(), eventId: 'EVT_x', recordedAt: 'now' },
+    runFixture(),
+  );
+  assert.match(body, /<form class="order" method="post" action="\/checkout">/);
+  assert.match(body, /name="sku"/);
+  assert.match(body, /name="quantity"/);
+  assert.match(body, /name="email"/);
+  assert.match(body, /<button type="submit">/);
+});
+
+test('the form posts SKUs the catalogue holds, not strings built in the browser', () => {
+  const body = renderProductBody(
+    { ...fixture(), eventId: 'EVT_x', recordedAt: 'now' },
+    runFixture(),
+  );
+  for (const v of fixture().variants) {
+    assert.ok(body.includes(`value="${v.sku}"`), `${v.sku} is not offered`);
+  }
+});
+
+test('no run, no purchase form — a button that cannot complete is worse than none', () => {
+  const body = renderProductBody({ ...fixture(), eventId: 'EVT_x', recordedAt: 'now' }, null);
+  assert.ok(!/<form/.test(body), 'the page offered a purchase with nothing to promise');
+});
+
+test('an unpriced variant is never offered for sale', () => {
+  const unpriced = {
+    ...fixture({ variants: [variant('OLB-CT-001', 'STN', 'M', null)] }),
+    eventId: 'EVT_x', recordedAt: 'now',
+  };
+  const body = renderProductBody(unpriced, runFixture());
+  assert.ok(!/<form/.test(body), 'a variant with no price was offered');
+});
+
+test('the form does not ask for an address it would then ignore', () => {
+  // ADR-004 hosted checkout collects the address. Asking here and discarding it
+  // is a form that lies about what it does with an answer.
+  const body = renderProductBody(
+    { ...fixture(), eventId: 'EVT_x', recordedAt: 'now' },
+    runFixture(),
+  );
+  assert.ok(!/name="line1"|name="postalCode"|name="address"/.test(body));
+  assert.match(body, /address is collected at payment/);
+});
+
+test('the built page carries the form, not just the renderer', () => {
+  const stamp = Math.random().toString(36).slice(2);
+  const catalogPath = resolve(dir, `form-cat-${stamp}.jsonl`);
+  const runsPath = resolve(dir, `form-runs-${stamp}.jsonl`);
+  new Catalog(catalogPath).record(fixture());
+
+  const runs = new PreorderRunStore(runsPath);
+  const input = {
+    runId: 'RUN_form', productId: fixture().productId,
+    opensAt: '2026-09-01T00:00:00.000Z', closesAt: '2026-09-30T00:00:00.000Z',
+    minimumQuantity: 20, targetQuantity: 40, productionLeadDays: 60,
+    promisedShipBy: '2026-12-01T00:00:00.000Z', supplierQuoteId: 'QUOTE_fixture', actor: 'test',
+  };
+  runs.record({ ...input, status: 'DRAFT' as const });
+  runs.record({ ...input, status: 'OPEN' as const });
+
+  const out = resolve(dir, `form-out-${stamp}`);
+  build({ outDir: out, catalogPath, runsPath });
+  const html = readFileSync(resolve(out, 'products/olb-ct-001/index.html'), 'utf8');
+  assert.match(html, /action="\/checkout"/, 'the build emitted no purchase form');
+});
+
+test('the page still ships no JavaScript', () => {
+  // The form works without any. If a script ever appears here it is because
+  // something stopped working without one.
+  const stamp = Math.random().toString(36).slice(2);
+  const catalogPath = resolve(dir, `js-cat-${stamp}.jsonl`);
+  new Catalog(catalogPath).record(fixture());
+  const out = resolve(dir, `js-out-${stamp}`);
+  build({ outDir: out, catalogPath });
+  for (const file of ['index.html', 'products/olb-ct-001/index.html']) {
+    const html = readFileSync(resolve(out, file), 'utf8');
+    assert.ok(!/<script/i.test(html), `${file} ships JavaScript`);
+    assert.ok(!/ on[a-z]+=/i.test(html), `${file} carries an inline event handler`);
+  }
+});

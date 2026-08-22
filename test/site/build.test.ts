@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 import { ProductionGuardError, build } from '../../src/site/build.ts';
 import { buildRoutes, countAtlasDataRows, navigation } from '../../src/site/routes.ts';
 import { escapeHtml, extractSection, renderMarkdown } from '../../src/site/markdown.ts';
-import { findConstructionTokens, stylesheet } from '../../src/site/styles.ts';
+import { findConstructionTokens, findUndefinedTokens, stylesheet } from '../../src/site/styles.ts';
 
 const outDir = mkdtempSync(resolve(tmpdir(), 'olibana-site-'));
 const result = build({ outDir });
@@ -109,8 +109,20 @@ test('navigation is generated from the manifest and stays within the silence bud
   const nav = navigation(buildRoutes());
   assert.ok(nav.length > 0);
   assert.ok(nav.length <= 8, '02_BRAND_EXPERIENCE_SYSTEM.md §5 caps navigation at 8 items');
-  assert.deepEqual(nav.map((n) => n.label), ['Olibana', 'Nature', 'Philosophy', 'Design Language']);
+  assert.deepEqual(nav.map((n) => n.label), ['Nature', 'Philosophy', 'Design Language']);
   assert.ok(!nav.some((n) => n.path === '/404'));
+});
+
+test('the navigation does not repeat a destination the header already links to', () => {
+  // The wordmark links home. A nav item that also links home is two controls
+  // for one destination — visible in a screenshot, invisible in the manifest.
+  const nav = navigation(buildRoutes());
+  assert.ok(!nav.some((n) => n.path === '/'), 'the navigation duplicates the wordmark');
+  for (const page of pages) {
+    const header = /<header class="site">[\s\S]*?<\/header>/.exec(html(page))?.[0] ?? '';
+    const homeLinks = [...header.matchAll(/href="\/"/g)].length;
+    assert.equal(homeLinks, 1, `${page} has ${homeLinks} links home in its header`);
+  }
 });
 
 test('no page triggers an automatic favicon request', () => {
@@ -223,4 +235,21 @@ test('the build is deterministic', () => {
     rmSync(a, { recursive: true, force: true });
     rmSync(b, { recursive: true, force: true });
   }
+});
+
+test('no stylesheet rule references a token that does not exist', () => {
+  // An undefined var() is silent: it falls back to the inherited value. The
+  // purchase button's label was written as var(--surface-page), which is not a
+  // token here, so it inherited #1A1A1A and rendered on a #1A1A1A background.
+  // Nothing in this suite could see it; a screenshot could.
+  assert.deepEqual(findUndefinedTokens(stylesheet), []);
+});
+
+test('the purchase button states a colour and a background, and they differ', () => {
+  const rule = /form\.order button \{[^}]*\}/.exec(stylesheet)?.[0] ?? '';
+  const colour = /(?:^|[^-])color:\s*var\((--[a-z0-9-]+)\)/.exec(rule)?.[1];
+  const background = /background:\s*var\((--[a-z0-9-]+)\)/.exec(rule)?.[1];
+  assert.ok(colour, 'the button sets no text colour');
+  assert.ok(background, 'the button sets no background');
+  assert.notEqual(colour, background, 'the button paints its label in its own background colour');
 });
