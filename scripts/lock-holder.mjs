@@ -8,10 +8,11 @@
  * argv: <logPath> <holdMs>
  */
 import { AppendLog } from '../src/persistence/append-log.ts';
+import { FileStorage } from '../src/persistence/file-storage.ts';
 
 const [, , logPath, holdMs] = process.argv;
 
-new AppendLog(logPath).withLock('held log', () => {
+new AppendLog(new FileStorage(logPath)).withLock('held log', () => {
   process.stdout.write('acquired\n');
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(holdMs));
   return { record: null, result: null };

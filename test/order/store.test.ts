@@ -6,10 +6,11 @@ import { resolve } from 'node:path';
 
 import { LogCorruptError, INITIAL_STATUS, OrderStore } from '../../src/order/store.ts';
 import { isId } from '../../src/identity/ids.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-store-'));
 let n = 0;
-const freshStore = (): OrderStore => new OrderStore(resolve(dir, `log-${n++}.jsonl`));
+const freshStore = (): OrderStore => new OrderStore(new FileStorage(resolve(dir, `log-${n++}.jsonl`)));
 const reached = { committedQuantity: 40, minimumQuantity: 30 };
 
 test.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -28,7 +29,7 @@ test('create → persist → read → RELOAD → the state is identical', () => 
   assert.equal(store.status('ORD_a'), 'PREORDER_HELD');
 
   // A different instance over the same file — this is the reload.
-  const reloaded = new OrderStore(store.path);
+  const reloaded = new OrderStore(new FileStorage(store.path));
   assert.equal(reloaded.status('ORD_a'), 'PREORDER_HELD');
   assert.deepEqual(reloaded.events(), store.events());
 });
@@ -86,7 +87,7 @@ test('idempotency survives a process restart — the in-memory version could not
   store.append(req);
 
   // A brand-new instance holds no memory of the first call.
-  const afterRestart = new OrderStore(store.path);
+  const afterRestart = new OrderStore(new FileStorage(store.path));
   assert.equal(afterRestart.append(req).outcome, 'duplicate');
   assert.equal(afterRestart.events().length, 1);
 });
@@ -162,7 +163,7 @@ test('a full pre-order lifecycle persists and replays to DELIVERED', () => {
     assert.equal(r.outcome, 'applied', `${to} failed`);
   });
   assert.equal(store.status('ORD_life'), 'DELIVERED');
-  assert.equal(new OrderStore(store.path).status('ORD_life'), 'DELIVERED');
+  assert.equal(new OrderStore(new FileStorage(store.path)).status('ORD_life'), 'DELIVERED');
 });
 
 test('the undersubscribed branch persists to REFUNDED', () => {
@@ -174,7 +175,7 @@ test('the undersubscribed branch persists to REFUNDED', () => {
   assert.equal(blocked.outcome, 'rejected', 'must not produce below break-even');
   store.append({ orderId: 'ORD_u', to: 'UNDERSUBSCRIBED', actor: 'system', idempotencyKey: '4', context: short });
   store.append({ orderId: 'ORD_u', to: 'REFUNDED', actor: 'system', idempotencyKey: '5' });
-  assert.equal(new OrderStore(store.path).status('ORD_u'), 'REFUNDED');
+  assert.equal(new OrderStore(new FileStorage(store.path)).status('ORD_u'), 'REFUNDED');
 });
 
 test('orders are isolated from one another', () => {
@@ -203,7 +204,7 @@ test('traceability fields round-trip, and absent ones stay absent', () => {
     orderId: 'ORD_t', to: 'PAID', actor: 'stripe', idempotencyKey: '1',
     sessionId: 'sess_1', signalId: 'pin_42', reason: 'checkout completed',
   });
-  const [event] = new OrderStore(store.path).eventsFor('ORD_t');
+  const [event] = new OrderStore(new FileStorage(store.path)).eventsFor('ORD_t');
   assert.equal(event?.sessionId, 'sess_1');
   assert.equal(event?.signalId, 'pin_42');
   assert.equal(event?.reason, 'checkout completed');
@@ -218,7 +219,7 @@ test('replay is deterministic — reading twice yields identical events', () => 
   store.append({ orderId: 'ORD_r', to: 'PAID', actor: 'a', idempotencyKey: '1' });
   store.append({ orderId: 'ORD_r', to: 'PREORDER_HELD', actor: 'a', idempotencyKey: '2' });
   assert.deepEqual(store.events(), store.events());
-  assert.deepEqual(new OrderStore(store.path).events(), store.events());
+  assert.deepEqual(new OrderStore(new FileStorage(store.path)).events(), store.events());
 });
 
 test('a corrupt line fails loudly rather than losing history silently', () => {

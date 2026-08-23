@@ -34,6 +34,7 @@ import { handleRequest } from '../src/http/router.ts';
 import { OrderStore } from '../src/order/store.ts';
 import { PreorderRunStore } from '../src/preorder/run.ts';
 import { build } from '../src/site/build.ts';
+import { FileStorage } from '../src/persistence/file-storage.ts';
 
 /** WCAG 2.2 SC 2.5.8 Target Size (Minimum), Level AA. */
 const MIN_TARGET_PX = 24;
@@ -59,7 +60,7 @@ const work = mkdtempSync(resolve(tmpdir(), 'olibana-visual-'));
 const catalogPath = resolve(work, 'catalog.jsonl');
 const runsPath = resolve(work, 'runs.jsonl');
 
-new Catalog(catalogPath).record({
+new Catalog(new FileStorage(catalogPath)).record({
   productId: 'PRD_fixture', code: 'OLB-CT-001', name: 'Fixture Coat', category: 'CT',
   status: 'PUBLISHED',
   summary: 'A rendering fixture. No such garment exists, and nothing here is published.',
@@ -75,7 +76,7 @@ new Catalog(catalogPath).record({
   naturalRule: null, materials: ['Wool', 'Cupro lining'], productionLeadDays: 60, actor: 'fixture',
 });
 
-const runs = new PreorderRunStore(runsPath);
+const runs = new PreorderRunStore(new FileStorage(runsPath));
 const run = {
   runId: 'RUN_fixture', productId: 'PRD_fixture',
   opensAt: '2026-09-01T00:00:00.000Z', closesAt: '2026-09-30T00:00:00.000Z',
@@ -94,10 +95,10 @@ build({ outDir: root, catalogPath, runsPath });
 const SANDBOX_SECRET = 'visual-check-sandbox-secret';
 const routerOptions = {
   stores: {
-    catalog: new Catalog(catalogPath),
-    runs: new PreorderRunStore(runsPath),
-    orders: new OrderStore(resolve(work, 'orders.jsonl')),
-    intents: new IntentStore(resolve(work, 'intents.jsonl')),
+    catalog: new Catalog(new FileStorage(catalogPath)),
+    runs: new PreorderRunStore(new FileStorage(runsPath)),
+    orders: new OrderStore(new FileStorage(resolve(work, 'orders.jsonl'))),
+    intents: new IntentStore(new FileStorage(resolve(work, 'intents.jsonl'))),
   },
   gateway: new SandboxGateway(true),
   verifier: new HmacWebhookVerifier(SANDBOX_SECRET),

@@ -8,6 +8,7 @@ import { Catalog } from '../src/catalog/catalog.ts';
 import { placeOrder } from '../src/order/placement.ts';
 import { OrderStore } from '../src/order/store.ts';
 import { PreorderRunStore } from '../src/preorder/run.ts';
+import { FileStorage } from '../src/persistence/file-storage.ts';
 
 const [, , catalogPath, runsPath, ordersPath, who, key, startAt] = process.argv;
 
@@ -19,9 +20,9 @@ if (startAt !== undefined) {
 try {
   const result = placeOrder(
     {
-      catalog: new Catalog(catalogPath),
-      runs: new PreorderRunStore(runsPath),
-      orders: new OrderStore(ordersPath),
+      catalog: new Catalog(new FileStorage(catalogPath)),
+      runs: new PreorderRunStore(new FileStorage(runsPath)),
+      orders: new OrderStore(new FileStorage(ordersPath)),
     },
     {
       email: `${who}@example.test`,

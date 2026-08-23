@@ -16,6 +16,7 @@ import { resolve } from 'node:path';
 import { Catalog, variant, type ProductInput } from '../../src/catalog/catalog.ts';
 import { OrderStore } from '../../src/order/store.ts';
 import { PreorderRunStore, type RunInput } from '../../src/preorder/run.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-place-race-'));
 const worker = resolve(import.meta.dirname, '../../scripts/place-worker.mjs');
@@ -58,8 +59,8 @@ function paths(): { catalogPath: string; runsPath: string; ordersPath: string } 
   const id = n++;
   const catalogPath = resolve(dir, `cat-${id}.jsonl`);
   const runsPath = resolve(dir, `runs-${id}.jsonl`);
-  new Catalog(catalogPath).record(product());
-  const runs = new PreorderRunStore(runsPath);
+  new Catalog(new FileStorage(catalogPath)).record(product());
+  const runs = new PreorderRunStore(new FileStorage(runsPath));
   runs.record(runInput());
   runs.record(runInput({ status: 'OPEN' }));
   return { catalogPath, runsPath, ordersPath: resolve(dir, `orders-${id}.jsonl`) };
@@ -97,7 +98,7 @@ test('CONCURRENCY: simultaneous customers never share an order number', async ()
 
   const outcomes = await race(p, (i) => [`buyer${i}`, `key-${i}`], COUNT);
 
-  const orders = new OrderStore(p.ordersPath);
+  const orders = new OrderStore(new FileStorage(p.ordersPath));
   const placed = orders.placements();
   assert.equal(placed.length, COUNT, `a concurrent order was lost (outcomes: ${outcomes.join(',')})`);
   assert.equal(
@@ -115,7 +116,7 @@ test('CONCURRENCY: one resubmitted form is one order, however many arrive at onc
 
   const outcomes = await race(p, () => ['ada', 'one-key'], COUNT);
 
-  const placed = new OrderStore(p.ordersPath).placements();
+  const placed = new OrderStore(new FileStorage(p.ordersPath)).placements();
   assert.equal(
     placed.length, 1,
     `${COUNT} simultaneous submissions produced ${placed.length} orders (${outcomes.join(',')})`,
@@ -130,7 +131,7 @@ test('CONCURRENCY: one customer submitting twice at once stays one customer', as
   // Same person, different keys — two genuine orders, one customer identity.
   await race(p, (i) => ['ada', `key-${i}`], COUNT);
 
-  const orders = new OrderStore(p.ordersPath);
+  const orders = new OrderStore(new FileStorage(p.ordersPath));
   assert.equal(orders.placements().length, COUNT);
   assert.equal(orders.customers().length, 1, 'one person became several customers');
 });

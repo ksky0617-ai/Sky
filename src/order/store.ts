@@ -34,6 +34,7 @@
  */
 
 import { AppendLog, LogCorruptError } from '../persistence/append-log.ts';
+import type { LogStorage } from '../persistence/storage.ts';
 import { newId } from '../identity/ids.ts';
 import {
   applyTransition,
@@ -185,8 +186,8 @@ function redeliveryKeyOf(event: Pick<OrderEvent, 'orderId' | 'idempotencyKey'>):
 export class OrderStore {
   readonly #log: AppendLog<OrderRecord>;
 
-  constructor(path: string) {
-    this.#log = new AppendLog<OrderRecord>(path);
+  constructor(storage: LogStorage) {
+    this.#log = new AppendLog<OrderRecord>(storage);
   }
 
   get path(): string {

@@ -9,10 +9,11 @@ import {
   variant, type ProductInput,
 } from '../../src/catalog/catalog.ts';
 import { isId } from '../../src/identity/ids.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-catalog-'));
 let n = 0;
-const fresh = (): Catalog => new Catalog(resolve(dir, `cat-${n++}.jsonl`));
+const fresh = (): Catalog => new Catalog(new FileStorage(resolve(dir, `cat-${n++}.jsonl`)));
 
 test.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -48,7 +49,7 @@ test('a recorded product round-trips through reload', () => {
   const recorded = catalog.record(publishable());
   assert.ok(isId('event', recorded.eventId));
 
-  const reloaded = new Catalog(catalog.path);
+  const reloaded = new Catalog(new FileStorage(catalog.path));
   assert.equal(reloaded.published().length, 1);
   assert.deepEqual(reloaded.product('PRD_test'), recorded);
 });

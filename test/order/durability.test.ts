@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 import { LogCorruptError, OrderStore } from '../../src/order/store.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-dur-'));
 const worker = resolve(import.meta.dirname, '../../scripts/append-worker.mjs');
@@ -66,7 +67,7 @@ test('sequential appends from separate processes are all recorded', () => {
       { stdio: 'ignore' },
     );
   }
-  const store = new OrderStore(path);
+  const store = new OrderStore(new FileStorage(path));
   assert.equal(store.eventsFor('ORD_seq').length, 3);
   assert.equal(store.status('ORD_seq'), 'PREORDER_HELD');
 });
@@ -77,7 +78,7 @@ test('CONCURRENCY: parallel processes with the SAME key must produce one record'
 
   const outcomes = await race(path, () => ['ORD_race', 'PAID', 'same_key'], COUNT);
 
-  const applied = new OrderStore(path).eventsFor('ORD_race').filter((e) => e.accepted);
+  const applied = new OrderStore(new FileStorage(path)).eventsFor('ORD_race').filter((e) => e.accepted);
   assert.equal(
     applied.length,
     1,
@@ -97,7 +98,7 @@ test('CONCURRENCY: parallel appends with distinct keys lose no writes and corrup
 
   await race(path, (i) => [`ORD_p${i}`, 'PAID', `k${i}`], COUNT);
 
-  const store = new OrderStore(path);            // throws if any line is malformed
+  const store = new OrderStore(new FileStorage(path));            // throws if any line is malformed
   assert.equal(store.events().length, COUNT, 'a concurrent write was lost or duplicated');
   assert.equal(new Set(store.orderIds()).size, COUNT);
 });
@@ -112,7 +113,7 @@ test('CONCURRENCY: simultaneous transitions of ONE order are serialised, not int
   // recorded, not dropped.
   const outcomes = await race(path, (i) => ['ORD_one', 'PAID', `key${i}`], COUNT);
 
-  const store = new OrderStore(path);
+  const store = new OrderStore(new FileStorage(path));
   const events = store.eventsFor('ORD_one');
   assert.equal(events.length, COUNT, 'a concurrent attempt vanished instead of being recorded');
   assert.equal(
@@ -125,7 +126,7 @@ test('CONCURRENCY: simultaneous transitions of ONE order are serialised, not int
 
 test('CRASH: a truncated final line does not brick the store', () => {
   const path = freshPath();
-  const store = new OrderStore(path);
+  const store = new OrderStore(new FileStorage(path));
   store.append({ orderId: 'ORD_crash', to: 'PAID', actor: 'a', idempotencyKey: '1' });
 
   // A process killed mid-write leaves a partial final line: the record was
@@ -133,36 +134,36 @@ test('CRASH: a truncated final line does not brick the store', () => {
   const partial = JSON.stringify({ orderId: 'ORD_crash', to: 'PREORDER' }).slice(0, 20);
   writeFileSync(path, `${readFileSync(path, 'utf8')}${partial}`, 'utf8');
 
-  const reopened = new OrderStore(path);
+  const reopened = new OrderStore(new FileStorage(path));
   assert.equal(reopened.eventsFor('ORD_crash').length, 1, 'the completed record was lost');
   assert.equal(reopened.status('ORD_crash'), 'PAID');
 });
 
 test('CRASH: a store recovered from a truncated write still accepts new writes', () => {
   const path = freshPath();
-  const store = new OrderStore(path);
+  const store = new OrderStore(new FileStorage(path));
   store.append({ orderId: 'ORD_resume', to: 'PAID', actor: 'a', idempotencyKey: '1' });
   writeFileSync(path, `${readFileSync(path, 'utf8')}{"orderId":"ORD_resume"`, 'utf8');
 
   // Recovery is not enough on its own: a log that can be read but not written
   // to is still a stopped business.
-  const reopened = new OrderStore(path);
+  const reopened = new OrderStore(new FileStorage(path));
   const result = reopened.append({
     orderId: 'ORD_resume', to: 'PREORDER_HELD', actor: 'a', idempotencyKey: '2',
   });
   assert.equal(result.outcome, 'applied');
-  assert.equal(new OrderStore(path).status('ORD_resume'), 'PREORDER_HELD');
+  assert.equal(new OrderStore(new FileStorage(path)).status('ORD_resume'), 'PREORDER_HELD');
 });
 
 test('CORRUPTION: a malformed line in the middle still throws', () => {
   const path = freshPath();
-  const store = new OrderStore(path);
+  const store = new OrderStore(new FileStorage(path));
   store.append({ orderId: 'ORD_mid', to: 'PAID', actor: 'a', idempotencyKey: '1' });
   store.append({ orderId: 'ORD_mid', to: 'PREORDER_HELD', actor: 'a', idempotencyKey: '2' });
 
   const lines = readFileSync(path, 'utf8').split('\n').filter((l) => l !== '');
   writeFileSync(path, `${lines[0]}\n{damaged}\n${lines[1]}\n`, 'utf8');
 
-  assert.throws(() => new OrderStore(path).events(), LogCorruptError,
+  assert.throws(() => new OrderStore(new FileStorage(path)).events(), LogCorruptError,
     'damage inside the history must not be silently skipped');
 });

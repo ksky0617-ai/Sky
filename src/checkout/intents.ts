@@ -27,6 +27,7 @@
  */
 
 import { AppendLog, LogCorruptError } from '../persistence/append-log.ts';
+import type { LogStorage } from '../persistence/storage.ts';
 import type { CheckoutIntent } from './checkout.ts';
 
 export { LogCorruptError };
@@ -42,8 +43,8 @@ export interface RecordedIntent extends CheckoutIntent {
 export class IntentStore {
   readonly #log: AppendLog<RecordedIntent>;
 
-  constructor(path: string) {
-    this.#log = new AppendLog<RecordedIntent>(path);
+  constructor(storage: LogStorage) {
+    this.#log = new AppendLog<RecordedIntent>(storage);
   }
 
   get path(): string {

@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 import { Catalog, LogCorruptError, variant } from '../../src/catalog/catalog.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-cat-dur-'));
 const worker = resolve(import.meta.dirname, '../../scripts/catalog-worker.mjs');
@@ -64,7 +65,7 @@ test('CONCURRENCY: parallel revisions from separate processes all survive', asyn
     COUNT,
   );
 
-  const catalog = new Catalog(path);                  // throws if any line is malformed
+  const catalog = new Catalog(new FileStorage(path));                  // throws if any line is malformed
   assert.equal(catalog.revisions().length, COUNT, 'a concurrent revision was lost or duplicated');
   assert.equal(catalog.products().length, COUNT);
   assert.equal(new Set(ids).size, COUNT, 'two revisions were given the same event id');
@@ -76,7 +77,7 @@ test('CONCURRENCY: parallel revisions of ONE product resolve to a single latest'
 
   await race(path, (i) => ['PRD_same', 'OLB-CT-001', `revision ${i}`], COUNT);
 
-  const catalog = new Catalog(path);
+  const catalog = new Catalog(new FileStorage(path));
   assert.equal(catalog.revisions().length, COUNT, 'a revision of a contended product was lost');
   assert.equal(catalog.products().length, 1, 'one product must not become several');
 });
@@ -91,7 +92,7 @@ test('CONCURRENCY: one product code cannot be claimed by two products at once', 
   // and the public identifier stops identifying anything.
   const outcomes = await race(path, (i) => [`PRD_claim_${i}`, 'OLB-CT-001', `garment ${i}`], COUNT);
 
-  const catalog = new Catalog(path);
+  const catalog = new Catalog(new FileStorage(path));
   const claimants = new Set(catalog.revisions().map((r) => r.productId));
   assert.equal(
     claimants.size,
@@ -107,7 +108,7 @@ test('CONCURRENCY: one product code cannot be claimed by two products at once', 
 
 test('CRASH: a truncated final revision does not brick the catalogue', () => {
   const path = freshPath();
-  const catalog = new Catalog(path);
+  const catalog = new Catalog(new FileStorage(path));
   catalog.record({
     productId: 'PRD_crash',
     code: 'OLB-CT-001',
@@ -126,7 +127,7 @@ test('CRASH: a truncated final revision does not brick the catalogue', () => {
   const partial = JSON.stringify({ productId: 'PRD_crash', name: 'never finished' }).slice(0, 24);
   writeFileSync(path, `${readFileSync(path, 'utf8')}${partial}`, 'utf8');
 
-  const reopened = new Catalog(path);
+  const reopened = new Catalog(new FileStorage(path));
   assert.equal(reopened.revisions().length, 1, 'the committed revision was lost');
   assert.equal(reopened.product('PRD_crash')?.summary, 'complete');
 });
@@ -134,5 +135,5 @@ test('CRASH: a truncated final revision does not brick the catalogue', () => {
 test('CORRUPTION: damage inside catalogue history still throws', () => {
   const path = freshPath();
   writeFileSync(path, '{"productId":"a"}\n{damaged}\n{"productId":"c"}\n', 'utf8');
-  assert.throws(() => new Catalog(path).revisions(), LogCorruptError);
+  assert.throws(() => new Catalog(new FileStorage(path)).revisions(), LogCorruptError);
 });

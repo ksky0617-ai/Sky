@@ -9,6 +9,26 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-22-016 · V0 + V1 + V2 + V4 + V5 · The deployed function could not have run
+
+| | |
+| --- | --- |
+| **Target** | `src/persistence/storage.ts` (new), `src/persistence/file-storage.ts` (new), `AppendLog`, all four stores, `functions/[[path]].ts` |
+| **Why** | §22 required a repository-wide audit before touching anything. Tracing the deployment adapter's import graph found the highest-risk item in the repository, and it was not a future concern. |
+| **Defect — shipped, and worse than previously recorded** | The Pages adapter statically imported `node:fs`, through the domain: adapter → catalogue → `AppendLog` → `node:fs`. Cloudflare Workers have neither `node:fs` nor a writable filesystem, so **the deployed function could not have served one request in any mode**, including the `closed` mode that writes nothing at all. The previous cycle recorded "the adapter has never run there" — true, but an understatement: it *could not*. |
+| **Why nothing caught it** | Every unit test passed. The deployment tests passed too — they run under Node, where `node:fs` exists. The defect is not in any module's behaviour; it is in the **shape of the import graph**, which nothing looked at. |
+| **Fix** | `LogStorage` names the physical operations; `FileStorage` is the only module that touches `node:fs`; `AppendLog` and everything above it now know nothing about files. The adapter reaches file storage by **dynamic** import, so it loads only on the branch that needs it. |
+| **What the seam is for** | PCQ-004 asked where production state lives. That question is now answerable without touching domain code: a durable store implements four methods. The interface documents the four guarantees any implementation must meet, and states plainly that an eventually-consistent key-value store meets neither the append nor the cross-process exclusion guarantee — which is why PCQ-004 stays open rather than being quietly closed with the nearest available store. |
+| **Honest refusal** | `UnavailableStorage` reads as empty (nothing recorded *is* the truth) and **throws on write**. A deployment with no durable storage refuses to record rather than accepting a write that goes nowhere — which would be an order the customer believes was placed. |
+| **Observed** | 296/296 pass. The live sandbox loop re-run over real HTTP after the refactor: intent recorded, `OLB-2608-0001`, `OLB-CT-001-STN-M ×2`, 144000 JPY, **PAID**, address from the gateway. Visual and performance unchanged: LCP 32–48ms, CLS 0, 0 scripts, no undersized targets. |
+| **Result** | **PASS** |
+| **New permanent check** | `test/http/runtime-compat.test.ts` walks the adapter's **static** import graph and fails on any Node built-in a Workers runtime lacks. It distinguishes static from dynamic imports, because only the former load with the module. Three of its four tests exist to stop it becoming decoration: one asserts the walk actually reaches the order store, one asserts it reports a `node:fs` import that is definitely there, one pins the dynamic import it deliberately permits. |
+| **Mutations** | **M88 restores the original defect** — a static `node:fs` import in the adapter → caught. M90 the interrupted fragment is not removed before the next append → caught by 2. **M89 survived**: `UnavailableStorage.append` silently returning was not caught, because nothing tested the refusal the class exists for. `test/persistence/storage.test.ts` closes it; M89′ now caught by 3. M91 memory storage allows re-entrant locking → caught. |
+| **Limitation** | The adapter is now *loadable* on Workers. It has still **never been run there** — that needs credentials. And `live` mode still cannot work on Pages, because no durable store exists yet (PCQ-004); what changed is that adding one no longer means touching the domain. |
+| **Commit** | written against `530b4ff` |
+
+---
+
 ## V-2026-08-22-015 · V1 + V3 + V4 · Security headers and performance budgets
 
 | | |

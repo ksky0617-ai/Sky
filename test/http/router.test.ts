@@ -35,6 +35,7 @@ import { IntentStore } from '../../src/checkout/intents.ts';
 import { HmacWebhookVerifier, signWebhook, type SignedWebhook } from '../../src/checkout/sandbox.ts';
 import { OrderStore } from '../../src/order/store.ts';
 import { PreorderRunStore, type RunInput } from '../../src/preorder/run.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-http-'));
 let n = 0;
@@ -74,15 +75,15 @@ const runInput = (overrides: Partial<RunInput> = {}): RunInput => ({
 
 function stores(options: { product?: ProductInput; open?: boolean } = {}): CheckoutStores {
   const id = n++;
-  const catalog = new Catalog(resolve(dir, `cat-${id}.jsonl`));
+  const catalog = new Catalog(new FileStorage(resolve(dir, `cat-${id}.jsonl`)));
   catalog.record(options.product ?? product());
-  const runs = new PreorderRunStore(resolve(dir, `runs-${id}.jsonl`));
+  const runs = new PreorderRunStore(new FileStorage(resolve(dir, `runs-${id}.jsonl`)));
   runs.record(runInput());
   if (options.open !== false) runs.record(runInput({ status: 'OPEN' }));
   return {
     catalog, runs,
-    orders: new OrderStore(resolve(dir, `orders-${id}.jsonl`)),
-    intents: new IntentStore(resolve(dir, `intents-${id}.jsonl`)),
+    orders: new OrderStore(new FileStorage(resolve(dir, `orders-${id}.jsonl`))),
+    intents: new IntentStore(new FileStorage(resolve(dir, `intents-${id}.jsonl`))),
   };
 }
 
@@ -373,7 +374,7 @@ test('form post to paid order to confirmation, end to end, on real files', async
   const paid = await handleRequest(o, await signedWebhook({ reference, amountPaid: 216000 }));
   assert.equal(paid?.status, 200);
 
-  const reloaded = new OrderStore(o.stores.orders.path);
+  const reloaded = new OrderStore(new FileStorage(o.stores.orders.path));
   const order = reloaded.placements()[0];
   assert.equal(order.items[0].quantity, 3);
   assert.equal(order.subtotalAmount, 216000);

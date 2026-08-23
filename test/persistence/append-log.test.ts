@@ -12,13 +12,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
+import { AppendLog, LogCorruptError } from '../../src/persistence/append-log.ts';
 import {
-  AppendLog,
+  FileStorage,
   LOCK_TIMEOUT_MS,
   LockTimeoutError,
-  LogCorruptError,
   STALE_LOCK_MS,
-} from '../../src/persistence/append-log.ts';
+} from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-log-'));
 let n = 0;
@@ -31,12 +31,12 @@ interface Row {
 }
 
 test('an absent log reads as empty rather than throwing', () => {
-  const log = new AppendLog<Row>(freshPath());
+  const log = new AppendLog<Row>(new FileStorage(freshPath()));
   assert.deepEqual(log.read('test log'), { records: [], truncatedTail: false, completeBytes: 0 });
 });
 
 test('records round-trip in the order they were appended', () => {
-  const log = new AppendLog<Row>(freshPath());
+  const log = new AppendLog<Row>(new FileStorage(freshPath()));
   for (const id of [1, 2, 3]) {
     log.withLock('test log', () => ({ record: { id }, result: null }));
   }
@@ -47,7 +47,7 @@ test('records round-trip in the order they were appended', () => {
 });
 
 test('work sees the records already in the log, so a decision cannot be stale', () => {
-  const log = new AppendLog<Row>(freshPath());
+  const log = new AppendLog<Row>(new FileStorage(freshPath()));
   log.withLock('test log', () => ({ record: { id: 1 }, result: null }));
   const seen = log.withLock<readonly Row[]>('test log', (records) => ({
     record: null,
@@ -58,13 +58,13 @@ test('work sees the records already in the log, so a decision cannot be stale', 
 
 test('returning no record appends nothing', () => {
   const path = freshPath();
-  const log = new AppendLog<Row>(path);
+  const log = new AppendLog<Row>(new FileStorage(path));
   log.withLock('test log', () => ({ record: null, result: null }));
   assert.equal(log.read('test log').records.length, 0);
 });
 
 test('the lock is released after work throws, so the log is not left jammed', () => {
-  const log = new AppendLog<Row>(freshPath());
+  const log = new AppendLog<Row>(new FileStorage(freshPath()));
   assert.throws(() => {
     log.withLock('test log', () => {
       throw new Error('work failed');
@@ -77,7 +77,7 @@ test('the lock is released after work throws, so the log is not left jammed', ()
 
 test('a truncated final line is discarded and reported', () => {
   const path = freshPath();
-  const log = new AppendLog<Row>(path);
+  const log = new AppendLog<Row>(new FileStorage(path));
   log.withLock('test log', () => ({ record: { id: 1 }, result: null }));
   writeFileSync(path, `${readFileSync(path, 'utf8')}{"id":2`, 'utf8');
 
@@ -88,7 +88,7 @@ test('a truncated final line is discarded and reported', () => {
 
 test('the fragment of an interrupted write is removed before the next append', () => {
   const path = freshPath();
-  const log = new AppendLog<Row>(path);
+  const log = new AppendLog<Row>(new FileStorage(path));
   log.withLock('test log', () => ({ record: { id: 1 }, result: null }));
   writeFileSync(path, `${readFileSync(path, 'utf8')}{"id":2`, 'utf8');
 
@@ -105,7 +105,7 @@ test('the fragment of an interrupted write is removed before the next append', (
 test('truncation is measured in bytes, so multi-byte text is not cut mid-character', () => {
   const path = freshPath();
   interface Named { readonly name: string }
-  const log = new AppendLog<Named>(path);
+  const log = new AppendLog<Named>(new FileStorage(path));
   // Japanese and an em dash: every one of these is several bytes, so a
   // character-counted offset would cut inside a character and corrupt the
   // record that precedes the fragment.
@@ -122,7 +122,7 @@ test('truncation is measured in bytes, so multi-byte text is not cut mid-charact
 
 test('a complete final line is never mistaken for a truncated one', () => {
   const path = freshPath();
-  const log = new AppendLog<Row>(path);
+  const log = new AppendLog<Row>(new FileStorage(path));
   log.withLock('test log', () => ({ record: { id: 1 }, result: null }));
   const result = log.read('test log');
   assert.equal(result.truncatedTail, false);
@@ -132,7 +132,7 @@ test('a complete final line is never mistaken for a truncated one', () => {
 test('damage inside committed history throws even when the file ends cleanly', () => {
   const path = freshPath();
   writeFileSync(path, '{"id":1}\n{damaged}\n{"id":3}\n', 'utf8');
-  assert.throws(() => new AppendLog<Row>(path).read('test log'), LogCorruptError);
+  assert.throws(() => new AppendLog<Row>(new FileStorage(path)).read('test log'), LogCorruptError);
 });
 
 test('damage inside committed history throws even when the file ends mid-line', () => {
@@ -140,12 +140,12 @@ test('damage inside committed history throws even when the file ends mid-line', 
   // Both a corrupt middle line and a truncated tail. The tail is forgivable;
   // the middle is not, and the forgivable one must not mask the other.
   writeFileSync(path, '{"id":1}\n{damaged}\n{"id":3', 'utf8');
-  assert.throws(() => new AppendLog<Row>(path).read('test log'), LogCorruptError);
+  assert.throws(() => new AppendLog<Row>(new FileStorage(path)).read('test log'), LogCorruptError);
 });
 
 test('a lock held by a live writer times out rather than being stolen', () => {
   const path = freshPath();
-  const log = new AppendLog<Row>(path);
+  const log = new AppendLog<Row>(new FileStorage(path));
   writeFileSync(`${path}.lock`, '', 'utf8');           // fresh: holder is alive
 
   const started = Date.now();
@@ -163,7 +163,7 @@ test('a lock held by a live writer times out rather than being stolen', () => {
 
 test('a lock abandoned by a dead writer is reclaimed', () => {
   const path = freshPath();
-  const log = new AppendLog<Row>(path);
+  const log = new AppendLog<Row>(new FileStorage(path));
   const lockPath = `${path}.lock`;
   writeFileSync(lockPath, '', 'utf8');
   const longAgo = new Date(Date.now() - STALE_LOCK_MS * 3);
@@ -192,7 +192,7 @@ test('a writer waits while another process holds the lock', async () => {
     });
   });
 
-  const log = new AppendLog<Row>(path);
+  const log = new AppendLog<Row>(new FileStorage(path));
   const started = Date.now();
   log.withLock('test log', () => ({ record: { id: 1 }, result: null }));
   const waited = Date.now() - started;
@@ -209,7 +209,7 @@ test('a writer waits while another process holds the lock', async () => {
 
 test('the lock file is removed once the write completes', () => {
   const path = freshPath();
-  const log = new AppendLog<Row>(path);
+  const log = new AppendLog<Row>(new FileStorage(path));
   log.withLock('test log', () => ({ record: { id: 1 }, result: null }));
   assert.equal(existsSync(`${path}.lock`), false);
 });

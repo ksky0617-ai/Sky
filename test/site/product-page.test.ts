@@ -9,6 +9,7 @@ import { buildRoutes, CATALOG_PATH, RUNS_PATH } from '../../src/site/routes.ts';
 import { formatPrice, renderProductBody } from '../../src/site/product-page.ts';
 import { PreorderRunStore, type RunRevision } from '../../src/preorder/run.ts';
 import { Catalog, variant, type ProductInput } from '../../src/catalog/catalog.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-pp-'));
 test.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -29,7 +30,7 @@ const fixture = (overrides: Partial<ProductInput> = {}): ProductInput => ({
 function siteWith(products: readonly ProductInput[]): { out: string; files: readonly string[] } {
   const stamp = `${products.length}-${Math.random().toString(36).slice(2)}`;
   const catalogPath = resolve(dir, `cat-${stamp}.jsonl`);
-  const catalog = new Catalog(catalogPath);
+  const catalog = new Catalog(new FileStorage(catalogPath));
   for (const p of products) catalog.record(p);
   const out = resolve(dir, `out-${stamp}`);
   const result = build({ outDir: out, catalogPath });
@@ -193,9 +194,9 @@ test('a built page carries the run\'s dates — the wiring, not the renderer', (
   const stamp = Math.random().toString(36).slice(2);
   const catalogPath = resolve(dir, `wired-cat-${stamp}.jsonl`);
   const runsPath = resolve(dir, `wired-runs-${stamp}.jsonl`);
-  new Catalog(catalogPath).record(fixture());
+  new Catalog(new FileStorage(catalogPath)).record(fixture());
 
-  const runs = new PreorderRunStore(runsPath);
+  const runs = new PreorderRunStore(new FileStorage(runsPath));
   const input = {
     runId: 'RUN_wired',
     productId: fixture().productId,
@@ -224,9 +225,9 @@ test('a closed run is not shown as if it were open', () => {
   const stamp = Math.random().toString(36).slice(2);
   const catalogPath = resolve(dir, `closed-cat-${stamp}.jsonl`);
   const runsPath = resolve(dir, `closed-runs-${stamp}.jsonl`);
-  new Catalog(catalogPath).record(fixture());
+  new Catalog(new FileStorage(catalogPath)).record(fixture());
 
-  const runs = new PreorderRunStore(runsPath);
+  const runs = new PreorderRunStore(new FileStorage(runsPath));
   const input = {
     runId: 'RUN_closed',
     productId: fixture().productId,
@@ -254,7 +255,7 @@ test('a closed run is not shown as if it were open', () => {
 test('THE CURRENT REPOSITORY has no open run', () => {
   // Same honesty guard as the catalogue: no run exists, so no page can state a
   // window. Changing this requires recording a run, deliberately.
-  assert.equal(new PreorderRunStore(RUNS_PATH).open().length, 0);
+  assert.equal(new PreorderRunStore(new FileStorage(RUNS_PATH)).open().length, 0);
 });
 
 // --- the purchase action -------------------------------------------------
@@ -310,9 +311,9 @@ test('the built page carries the form, not just the renderer', () => {
   const stamp = Math.random().toString(36).slice(2);
   const catalogPath = resolve(dir, `form-cat-${stamp}.jsonl`);
   const runsPath = resolve(dir, `form-runs-${stamp}.jsonl`);
-  new Catalog(catalogPath).record(fixture());
+  new Catalog(new FileStorage(catalogPath)).record(fixture());
 
-  const runs = new PreorderRunStore(runsPath);
+  const runs = new PreorderRunStore(new FileStorage(runsPath));
   const input = {
     runId: 'RUN_form', productId: fixture().productId,
     opensAt: '2026-09-01T00:00:00.000Z', closesAt: '2026-09-30T00:00:00.000Z',
@@ -333,7 +334,7 @@ test('the page still ships no JavaScript', () => {
   // something stopped working without one.
   const stamp = Math.random().toString(36).slice(2);
   const catalogPath = resolve(dir, `js-cat-${stamp}.jsonl`);
-  new Catalog(catalogPath).record(fixture());
+  new Catalog(new FileStorage(catalogPath)).record(fixture());
   const out = resolve(dir, `js-out-${stamp}`);
   build({ outDir: out, catalogPath });
   for (const file of ['index.html', 'products/olb-ct-001/index.html']) {

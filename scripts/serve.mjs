@@ -28,6 +28,7 @@ import { handleRequest, UnconfiguredVerifier } from '../src/http/router.ts';
 import { OrderStore } from '../src/order/store.ts';
 import { PreorderRunStore } from '../src/preorder/run.ts';
 import { CATALOG_PATH, RUNS_PATH } from '../src/site/routes.ts';
+import { FileStorage } from '../src/persistence/file-storage.ts';
 
 const root = process.argv[2] ?? 'dist';
 const port = Number(process.argv[3] ?? 0);
@@ -38,10 +39,10 @@ const ORDERS_PATH = resolve(import.meta.dirname, '../data/orders.jsonl');
 const configured = validateEnvironment(process.env);
 
 const stores = {
-  catalog: new Catalog(process.env.OLIBANA_CATALOG ?? CATALOG_PATH),
-  runs: new PreorderRunStore(process.env.OLIBANA_RUNS ?? RUNS_PATH),
-  orders: new OrderStore(process.env.OLIBANA_ORDERS ?? ORDERS_PATH),
-  intents: new IntentStore(process.env.OLIBANA_INTENTS ?? resolve(import.meta.dirname, '../data/checkout-intents.jsonl')),
+  catalog: new Catalog(new FileStorage(process.env.OLIBANA_CATALOG ?? CATALOG_PATH)),
+  runs: new PreorderRunStore(new FileStorage(process.env.OLIBANA_RUNS ?? RUNS_PATH)),
+  orders: new OrderStore(new FileStorage(process.env.OLIBANA_ORDERS ?? ORDERS_PATH)),
+  intents: new IntentStore(new FileStorage(process.env.OLIBANA_INTENTS ?? resolve(import.meta.dirname, '../data/checkout-intents.jsonl'))),
 };
 
 const options = configured.mode === 'sandbox'

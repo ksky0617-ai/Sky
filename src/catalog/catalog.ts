@@ -25,6 +25,7 @@
 
 import { formatSku, isId, newId, parseSku, type CategoryCode } from '../identity/ids.ts';
 import { AppendLog, LogCorruptError } from '../persistence/append-log.ts';
+import type { LogStorage } from '../persistence/storage.ts';
 
 export type ProductStatus = 'DRAFT' | 'READY' | 'PUBLISHED' | 'CLOSED' | 'ARCHIVED';
 
@@ -146,8 +147,8 @@ function assertWellFormed(product: ProductInput): void {
 export class Catalog {
   readonly #log: AppendLog<ProductRevision>;
 
-  constructor(path: string) {
-    this.#log = new AppendLog<ProductRevision>(path);
+  constructor(storage: LogStorage) {
+    this.#log = new AppendLog<ProductRevision>(storage);
   }
 
   get path(): string {

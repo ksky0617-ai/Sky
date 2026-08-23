@@ -9,6 +9,7 @@ import { buildRoutes, countAtlasDataRows, navigation } from '../../src/site/rout
 import { escapeHtml, extractSection, renderMarkdown } from '../../src/site/markdown.ts';
 import { findConstructionTokens, findUndefinedTokens, stylesheet } from '../../src/site/styles.ts';
 import { SECURITY_HEADERS } from '../../src/http/router.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const outDir = mkdtempSync(resolve(tmpdir(), 'olibana-site-'));
 const result = build({ outDir });
@@ -270,10 +271,10 @@ test('every router response carries the security headers, including the redirect
   const stamp = Math.random().toString(36).slice(2);
   const options = {
     stores: {
-      catalog: new Catalog(resolve(outDir, `hdr-cat-${stamp}.jsonl`)),
-      runs: new PreorderRunStore(resolve(outDir, `hdr-runs-${stamp}.jsonl`)),
-      orders: new OrderStore(resolve(outDir, `hdr-orders-${stamp}.jsonl`)),
-      intents: new IntentStore(resolve(outDir, `hdr-intents-${stamp}.jsonl`)),
+      catalog: new Catalog(new FileStorage(resolve(outDir, `hdr-cat-${stamp}.jsonl`))),
+      runs: new PreorderRunStore(new FileStorage(resolve(outDir, `hdr-runs-${stamp}.jsonl`))),
+      orders: new OrderStore(new FileStorage(resolve(outDir, `hdr-orders-${stamp}.jsonl`))),
+      intents: new IntentStore(new FileStorage(resolve(outDir, `hdr-intents-${stamp}.jsonl`))),
     },
     gateway: new UnconfiguredGateway(),
     verifier: new UnconfiguredVerifier(),

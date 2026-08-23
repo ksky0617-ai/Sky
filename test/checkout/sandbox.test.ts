@@ -13,6 +13,7 @@ import { resolve } from 'node:path';
 
 import { CheckoutUnavailable, type CheckoutIntent } from '../../src/checkout/checkout.ts';
 import { IntentInvalid, IntentStore } from '../../src/checkout/intents.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 import {
   HmacWebhookVerifier,
   SandboxGateway,
@@ -131,14 +132,14 @@ test('the completion takes its key from the agreement, not from the message', as
 // --- the intent store ----------------------------------------------------
 
 function intents(): IntentStore {
-  return new IntentStore(resolve(dir, `intents-${n++}.jsonl`));
+  return new IntentStore(new FileStorage(resolve(dir, `intents-${n++}.jsonl`)));
 }
 
 test('an intent is recorded and read back by its reference', () => {
   const store = intents();
   store.record(intent);
   assert.equal(store.byReference('EVT_reference')?.totalAmount, 144000);
-  assert.equal(new IntentStore(store.path).byReference('EVT_reference')?.sku, 'OLB-CT-001-STN-M');
+  assert.equal(new IntentStore(new FileStorage(store.path)).byReference('EVT_reference')?.sku, 'OLB-CT-001-STN-M');
 });
 
 test('an unknown reference names nothing', () => {

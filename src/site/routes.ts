@@ -20,6 +20,7 @@ import { extractSection, renderMarkdown } from './markdown.ts';
 import { renderProductBody } from './product-page.ts';
 import { Catalog, type ProductRevision } from '../catalog/catalog.ts';
 import { PreorderRunStore, preorderWindow, type PreorderWindow } from '../preorder/run.ts';
+import { FileStorage } from '../persistence/file-storage.ts';
 
 export interface Route {
   /** URL path. */
@@ -328,8 +329,8 @@ export function buildRoutes(
   catalogPath: string = CATALOG_PATH,
   runsPath: string = RUNS_PATH,
 ): readonly Route[] {
-  const published = new Catalog(catalogPath).published();
-  const runs = new PreorderRunStore(runsPath);
+  const published = new Catalog(new FileStorage(catalogPath)).published();
+  const runs = new PreorderRunStore(new FileStorage(runsPath));
 
   return [
     homePage(),

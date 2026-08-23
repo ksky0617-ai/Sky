@@ -29,6 +29,7 @@
 
 import { newId } from '../identity/ids.ts';
 import { AppendLog, LogCorruptError } from '../persistence/append-log.ts';
+import type { LogStorage } from '../persistence/storage.ts';
 
 export type RunStatus =
   | 'DRAFT'
@@ -214,8 +215,8 @@ function assertWellFormed(input: RunInput): void {
 export class PreorderRunStore {
   readonly #log: AppendLog<RunRevision>;
 
-  constructor(path: string) {
-    this.#log = new AppendLog<RunRevision>(path);
+  constructor(storage: LogStorage) {
+    this.#log = new AppendLog<RunRevision>(storage);
   }
 
   get path(): string {

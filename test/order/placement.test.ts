@@ -16,6 +16,7 @@ import { isId, parseOrderNumber } from '../../src/identity/ids.ts';
 import { OrderRejected, placeOrder, type PlacementRequest } from '../../src/order/placement.ts';
 import { OrderStore } from '../../src/order/store.ts';
 import { PreorderRunStore, type RunInput } from '../../src/preorder/run.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-place-'));
 let n = 0;
@@ -64,16 +65,16 @@ interface Stores {
 
 function stores(options: { product?: ProductInput; run?: Partial<RunInput> | null } = {}): Stores {
   const id = n++;
-  const catalog = new Catalog(resolve(dir, `cat-${id}.jsonl`));
+  const catalog = new Catalog(new FileStorage(resolve(dir, `cat-${id}.jsonl`)));
   catalog.record(options.product ?? product());
 
-  const runs = new PreorderRunStore(resolve(dir, `runs-${id}.jsonl`));
+  const runs = new PreorderRunStore(new FileStorage(resolve(dir, `runs-${id}.jsonl`)));
   if (options.run !== null) {
     runs.record(runInput(options.run));
     runs.record(runInput({ ...options.run, status: 'OPEN' }));
   }
 
-  return { catalog, runs, orders: new OrderStore(resolve(dir, `orders-${id}.jsonl`)) };
+  return { catalog, runs, orders: new OrderStore(new FileStorage(resolve(dir, `orders-${id}.jsonl`))) };
 }
 
 /** The same month as `sample`, at a chosen sequence. */
@@ -102,7 +103,7 @@ test('an order is placed, numbered, and persisted', () => {
   assert.ok(parseOrderNumber(order.number) !== null, `${order.number} is not an order number`);
   assert.equal(order.preorderRunId, 'RUN_test');
 
-  const reloaded = new OrderStore(s.orders.path);
+  const reloaded = new OrderStore(new FileStorage(s.orders.path));
   assert.deepEqual(reloaded.placement(order.orderId), order);
 });
 
@@ -128,7 +129,7 @@ test('the price is copied from the catalogue, not referenced', () => {
     ],
   }));
 
-  const stored = new OrderStore(s.orders.path).placement(order.orderId);
+  const stored = new OrderStore(new FileStorage(s.orders.path)).placement(order.orderId);
   assert.equal(stored?.items[0].unitPriceAmount, 72000, 'a past order was repriced');
   assert.equal(stored?.subtotalAmount, 144000);
 });
@@ -150,7 +151,7 @@ test('the promised ship date is copied, so changing the run cannot move it', () 
   // run after this one closes. The promise made to this customer must not.
   s.runs.record(runInput({ status: 'CLOSED_UNDERSUBSCRIBED' }));
   assert.equal(
-    new OrderStore(s.orders.path).placement(order.orderId)?.promisedShipBy,
+    new OrderStore(new FileStorage(s.orders.path)).placement(order.orderId)?.promisedShipBy,
     '2026-12-01T00:00:00.000Z',
   );
 });
@@ -317,7 +318,7 @@ test('the order log holds placements and transitions without confusing them', ()
     orderId: order.orderId, to: 'PAID', actor: 'stripe', idempotencyKey: 'paid-1',
   });
 
-  const reloaded = new OrderStore(s.orders.path);
+  const reloaded = new OrderStore(new FileStorage(s.orders.path));
   assert.equal(reloaded.placements().length, 1);
   assert.equal(reloaded.events().length, 1);
   assert.equal(reloaded.status(order.orderId), 'PAID');

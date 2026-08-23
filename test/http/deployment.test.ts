@@ -23,6 +23,7 @@ import { CHECKOUT_PATH, CONFIRMATION_PATH, SANDBOX_PATH, WEBHOOK_PATH } from '..
 import { IntentStore } from '../../src/checkout/intents.ts';
 import { OrderStore } from '../../src/order/store.ts';
 import { PreorderRunStore } from '../../src/preorder/run.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const { onRequest } = await import('../../functions/[[path]].ts');
 
@@ -44,7 +45,7 @@ function environment(overrides: Record<string, string | undefined> = {}): Record
   const catalogPath = resolve(dir, `cat-${id}.jsonl`);
   const runsPath = resolve(dir, `runs-${id}.jsonl`);
 
-  new Catalog(catalogPath).record({
+  new Catalog(new FileStorage(catalogPath)).record({
     productId: 'PRD_deploy', code: 'OLB-CT-001', name: 'Deploy Coat', category: 'CT',
     status: 'PUBLISHED', summary: 'A fixture, not a product.',
     variants: [variant('OLB-CT-001', 'STN', 'M', { amount: 72000, currency: 'JPY' })],
@@ -52,7 +53,7 @@ function environment(overrides: Record<string, string | undefined> = {}): Record
     productionLeadDays: 60, actor: 'test',
   });
 
-  const runs = new PreorderRunStore(runsPath);
+  const runs = new PreorderRunStore(new FileStorage(runsPath));
   const run = {
     runId: 'RUN_deploy', productId: 'PRD_deploy',
     opensAt: '2026-09-01T00:00:00.000Z', closesAt: '2026-09-30T00:00:00.000Z',
@@ -96,7 +97,7 @@ test('with no configuration the deployment is closed, and says so', async () => 
   const response = await onRequest({ request: post(CHECKOUT_PATH, selection), env });
   assert.equal(response.status, 503);
   assert.match(await response.text(), /Nothing has been charged/);
-  assert.equal(new OrderStore(env.OLIBANA_ORDERS as string).placements().length, 0);
+  assert.equal(new OrderStore(new FileStorage(env.OLIBANA_ORDERS as string)).placements().length, 0);
 });
 
 test('a half-configured deployment refuses to serve rather than serving half', async () => {
@@ -161,7 +162,7 @@ test('SANDBOX: selection to payment to confirmation, through the deployed adapte
   assert.match(paid.headers.get('location') ?? '', new RegExp(`^${CONFIRMATION_PATH}\\?ref=`));
 
   // 4. The order is on disk, paid, at the agreed price.
-  const orders = new OrderStore(env.OLIBANA_ORDERS as string);
+  const orders = new OrderStore(new FileStorage(env.OLIBANA_ORDERS as string));
   const order = orders.placements()[0];
   assert.equal(orders.placements().length, 1);
   assert.equal(orders.status(order.orderId), 'PAID');
@@ -192,7 +193,7 @@ test('SANDBOX: paying twice for one checkout produces one order', async () => {
   const second = await pay();
 
   assert.equal(second.status, 303, 'a repeat payment errored instead of resolving to the same order');
-  assert.equal(new OrderStore(env.OLIBANA_ORDERS as string).placements().length, 1);
+  assert.equal(new OrderStore(new FileStorage(env.OLIBANA_ORDERS as string)).placements().length, 1);
 });
 
 test('SANDBOX: an abandoned checkout leaves an intent and no order', async () => {
@@ -203,9 +204,9 @@ test('SANDBOX: an abandoned checkout leaves an intent and no order', async () =>
   });
   await onRequest({ request: post(CHECKOUT_PATH, selection), env });
 
-  assert.equal(new IntentStore(env.OLIBANA_INTENTS as string).all().length, 1);
-  assert.equal(new OrderStore(env.OLIBANA_ORDERS as string).placements().length, 0);
-  assert.equal(new OrderStore(env.OLIBANA_ORDERS as string).committedUnits('RUN_deploy'), 0);
+  assert.equal(new IntentStore(new FileStorage(env.OLIBANA_INTENTS as string)).all().length, 1);
+  assert.equal(new OrderStore(new FileStorage(env.OLIBANA_ORDERS as string)).placements().length, 0);
+  assert.equal(new OrderStore(new FileStorage(env.OLIBANA_ORDERS as string)).committedUnits('RUN_deploy'), 0);
 });
 
 test('a forged webhook cannot manufacture an order in any mode', async () => {
@@ -214,7 +215,7 @@ test('a forged webhook cannot manufacture an order in any mode', async () => {
       OLIBANA_MODE: mode, OLIBANA_WEBHOOK_SECRET: SECRET, OLIBANA_ORIGIN: 'http://localhost:8788',
     });
     await onRequest({ request: post(CHECKOUT_PATH, selection), env });
-    const reference = new IntentStore(env.OLIBANA_INTENTS as string).all()[0].reference;
+    const reference = new IntentStore(new FileStorage(env.OLIBANA_INTENTS as string)).all()[0].reference;
 
     const payload: SignedWebhook = {
       reference, providerRef: 'forged', email: 'attacker@example.test',
@@ -230,6 +231,6 @@ test('a forged webhook cannot manufacture an order in any mode', async () => {
 
     const response = await onRequest({ request: forged, env });
     assert.equal(response.status, 400, `${mode} accepted a forged signature`);
-    assert.equal(new OrderStore(env.OLIBANA_ORDERS as string).placements().length, 0);
+    assert.equal(new OrderStore(new FileStorage(env.OLIBANA_ORDERS as string)).placements().length, 0);
   }
 });

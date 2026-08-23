@@ -16,6 +16,7 @@ import { placeOrder } from '../../src/order/placement.ts';
 import { OrderStore } from '../../src/order/store.ts';
 import { closeRun, runContext } from '../../src/preorder/close.ts';
 import { PreorderRunStore, RunIntegrityError, type RunInput } from '../../src/preorder/run.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-close-'));
 let n = 0;
@@ -44,11 +45,11 @@ interface Stores {
 
 function stores(): Stores {
   const id = n++;
-  const catalog = new Catalog(resolve(dir, `cat-${id}.jsonl`));
+  const catalog = new Catalog(new FileStorage(resolve(dir, `cat-${id}.jsonl`)));
   catalog.record(product());
   return {
-    runs: new PreorderRunStore(resolve(dir, `runs-${id}.jsonl`)),
-    orders: new OrderStore(resolve(dir, `orders-${id}.jsonl`)),
+    runs: new PreorderRunStore(new FileStorage(resolve(dir, `runs-${id}.jsonl`))),
+    orders: new OrderStore(new FileStorage(resolve(dir, `orders-${id}.jsonl`))),
     catalog,
   };
 }
@@ -109,7 +110,7 @@ test('commitments are counted from the order log, not stored anywhere', () => {
 
   // A fresh instance reading the same file must agree — the count is derived,
   // so there is no in-memory total to be lost or to survive incorrectly.
-  assert.equal(new OrderStore(orders.path).committedUnits('RUN_test'), 5);
+  assert.equal(new OrderStore(new FileStorage(orders.path)).committedUnits('RUN_test'), 5);
 });
 
 test('a cancelled order stops counting, with no separate decrement to forget', () => {
@@ -233,7 +234,7 @@ test('the close survives a reload — it is on disk, not in memory', () => {
   commit(s, 'ada', 30);
   closeRun(runs, orders, 'RUN_test', 'op');
 
-  const reloaded = new PreorderRunStore(runs.path);
+  const reloaded = new PreorderRunStore(new FileStorage(runs.path));
   assert.equal(reloaded.run('RUN_test')?.status, 'CLOSED_REACHED');
   assert.equal(reloaded.revisions().length, 3, 'the run history was lost');
 });

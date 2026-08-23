@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 import { isId } from '../../src/identity/ids.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 import {
   closeOutcome,
   isTerminalRun,
@@ -15,7 +16,7 @@ import {
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-run-'));
 let n = 0;
-const fresh = (): PreorderRunStore => new PreorderRunStore(resolve(dir, `run-${n++}.jsonl`));
+const fresh = (): PreorderRunStore => new PreorderRunStore(new FileStorage(resolve(dir, `run-${n++}.jsonl`)));
 
 test.after(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -58,7 +59,7 @@ test('a run round-trips through reload', () => {
   const recorded = runs.record(quoted());
   assert.ok(isId('event', recorded.eventId));
 
-  const reloaded = new PreorderRunStore(runs.path);
+  const reloaded = new PreorderRunStore(new FileStorage(runs.path));
   assert.deepEqual(reloaded.run('RUN_test'), recorded);
 });
 

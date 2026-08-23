@@ -26,6 +26,7 @@ import { IntentStore } from '../../src/checkout/intents.ts';
 import { OrderRejected } from '../../src/order/placement.ts';
 import { OrderStore } from '../../src/order/store.ts';
 import { PreorderRunStore, type RunInput } from '../../src/preorder/run.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-checkout-'));
 let n = 0;
@@ -65,15 +66,15 @@ const runInput = (overrides: Partial<RunInput> = {}): RunInput => ({
 
 function stores(options: { product?: ProductInput; open?: boolean } = {}): CheckoutStores {
   const id = n++;
-  const catalog = new Catalog(resolve(dir, `cat-${id}.jsonl`));
+  const catalog = new Catalog(new FileStorage(resolve(dir, `cat-${id}.jsonl`)));
   catalog.record(options.product ?? product());
-  const runs = new PreorderRunStore(resolve(dir, `runs-${id}.jsonl`));
+  const runs = new PreorderRunStore(new FileStorage(resolve(dir, `runs-${id}.jsonl`)));
   runs.record(runInput());
   if (options.open !== false) runs.record(runInput({ status: 'OPEN' }));
   return {
     catalog, runs,
-    orders: new OrderStore(resolve(dir, `orders-${id}.jsonl`)),
-    intents: new IntentStore(resolve(dir, `intents-${id}.jsonl`)),
+    orders: new OrderStore(new FileStorage(resolve(dir, `orders-${id}.jsonl`))),
+    intents: new IntentStore(new FileStorage(resolve(dir, `intents-${id}.jsonl`))),
   };
 }
 
@@ -212,7 +213,7 @@ test('the whole path survives a reload', () => {
   const intent = beginCheckout(s, begin);
   const { order } = completeCheckout(s, intent, paid(intent));
 
-  const reloaded = new OrderStore(s.orders.path);
+  const reloaded = new OrderStore(new FileStorage(s.orders.path));
   assert.equal(reloaded.status(order.orderId), 'PAID');
   assert.deepEqual(reloaded.placement(order.orderId), order);
   assert.equal(reloaded.customerByEmail('ada@example.test')?.customerId, order.customer.customerId);

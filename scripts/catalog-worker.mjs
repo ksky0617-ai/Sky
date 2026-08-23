@@ -6,6 +6,7 @@
  * argv: <catalogPath> <productId> <code> <name>
  */
 import { Catalog, variant } from '../src/catalog/catalog.ts';
+import { FileStorage } from '../src/persistence/file-storage.ts';
 
 const [, , catalogPath, productId, code, name, startAt] = process.argv;
 
@@ -16,7 +17,7 @@ if (startAt !== undefined) {
   while (Date.now() < target) { /* wait for the barrier */ }
 }
 
-const catalog = new Catalog(catalogPath);
+const catalog = new Catalog(new FileStorage(catalogPath));
 
 try {
   const revision = catalog.record({

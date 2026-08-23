@@ -61,8 +61,13 @@ of them is a defect. A defect goes to the Critical Path, not here.
 - **Expected value:** Without it, no real order can be persisted in production.
 - **Risk:** Choosing the store (D1, R2, a small host with a disk) changes the
   persistence layer, which is the most heavily verified part of this system.
-  `AppendLog` is the seam; everything above it is written against records, not
-  files.
+  **The seam now exists**: `src/persistence/storage.ts` names four operations,
+  and a durable store implements them without the domain changing. The interface
+  states the four guarantees an implementation must meet — append-only,
+  cross-process exclusion, complete reads including a crashed tail, and exact
+  truncation. An eventually-consistent key-value store meets neither the first
+  nor the second, which is why this stays open rather than being closed with the
+  nearest available option.
 - **Dependencies:** P0-7 and a payment gateway — nothing needs this until real
   orders exist.
 - **Reversibility:** Reversible while no data exists. Not afterwards.
@@ -78,6 +83,20 @@ of them is a defect. A defect goes to the Critical Path, not here.
   irrelevant; the measurement should happen before it is assumed.
 - **Dependencies:** Interacts with PCQ-004 — a different store may make it moot.
 - **Reversibility:** Fully reversible.
+
+## PCQ-008 · A durable-store implementation of `LogStorage`
+
+- **Class:** FUTURE_SCOPE — the concrete half of PCQ-004
+- **Rationale:** With the seam in place, what remains is one class: `read`,
+  `append`, `truncate`, `withLock`. The hard part is not the code; it is picking
+  a store that genuinely offers append-only semantics and exclusion across
+  processes. D1 (SQLite, transactional) does. Workers KV does not.
+- **Expected value:** Turns `live` mode from impossible into configurable.
+- **Risk:** The durability tests spawn real processes against a filesystem. A new
+  store needs its own equivalents, or its guarantees are assumed rather than
+  measured — which is exactly how the two defects in cycle 10 got in.
+- **Dependencies:** P0-7, and a decision about hosting.
+- **Reversibility:** Reversible while no data exists.
 
 ## PCQ-006 · Contrast measured on every text pair, not only the purchase button
 

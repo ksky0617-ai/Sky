@@ -11,6 +11,7 @@
  * argv: <logPath> <orderId> <toStatus> <idempotencyKey> [startAtEpochMs]
  */
 import { OrderStore } from '../src/order/store.ts';
+import { FileStorage } from '../src/persistence/file-storage.ts';
 
 const [, , logPath, orderId, to, key, startAt] = process.argv;
 
@@ -20,6 +21,6 @@ if (startAt !== undefined) {
   while (Date.now() < target) { /* wait for the barrier */ }
 }
 
-const store = new OrderStore(logPath);
+const store = new OrderStore(new FileStorage(logPath));
 const result = store.append({ orderId, to, actor: `pid:${process.pid}`, idempotencyKey: key });
 process.stdout.write(result.outcome);
