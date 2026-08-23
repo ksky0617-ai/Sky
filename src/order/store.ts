@@ -260,6 +260,16 @@ export class OrderStore {
   }
 
   /**
+   * Checks that this store could accept a write, without recording anything.
+   *
+   * Used by the health endpoint. A store that reads but cannot write is the
+   * dangerous state: the site looks fine and orders are lost.
+   */
+  probeWritable(): void {
+    this.#log.probeWritable();
+  }
+
+  /**
    * Appends a placement under the same lock the transitions use, letting the
    * caller decide against the log as it stands. Used by `placeOrder`, which
    * owns every rule about what a valid order is.

@@ -109,6 +109,23 @@ export class AppendLog<T> {
   }
 
   /**
+   * Checks that this log could be written to, without writing a record.
+   *
+   * A zero-byte append is a real `open(O_APPEND)` + `write` + `close` on a
+   * file, so it fails on a read-only filesystem, a full disk, or a store that
+   * has no durable backing — and it leaves no record behind.
+   *
+   * The first version of the health check probed by calling `withLock` with
+   * nothing to append. That never reached the storage at all: a deployment
+   * whose writes went nowhere reported itself healthy.
+   */
+  probeWritable(): void {
+    this.#storage.withLock(() => {
+      this.#storage.append(new Uint8Array(0));
+    });
+  }
+
+  /**
    * Runs `work` while holding an exclusive lock, then appends whatever it
    * returns. `work` receives the records as they are inside the lock, so a
    * check-then-write decision cannot be raced.

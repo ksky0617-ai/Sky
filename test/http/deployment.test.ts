@@ -113,7 +113,13 @@ test('a half-configured deployment refuses to serve rather than serving half', a
 test('the sandbox is unreachable unless the deployment is a sandbox', async () => {
   const env = environment();
   const response = await onRequest({ request: get(`${SANDBOX_PATH}?ref=anything`), env });
+  const body = await response.text();
+
   assert.equal(response.status, 404, 'a closed deployment exposed the sandbox');
+  // A status alone would pass if the page rendered under a 404. What must not
+  // exist is the page that records payments nobody made.
+  assert.ok(!/Nothing is charged here/.test(body), 'the sandbox page rendered under a 404');
+  assert.ok(!/<form/.test(body), 'a payment form was served by a closed deployment');
 });
 
 test('live mode still refuses to invent a checkout URL', async () => {
@@ -121,13 +127,29 @@ test('live mode still refuses to invent a checkout URL', async () => {
   // thing a human must supply, and until they do, this must not guess.
   const env = environment({ OLIBANA_MODE: 'live', OLIBANA_WEBHOOK_SECRET: SECRET });
   const response = await onRequest({ request: post(CHECKOUT_PATH, selection), env });
+  const body = await response.text();
+
   assert.equal(response.status, 503);
+  assert.match(body, /Nothing has been charged/, 'the refusal did not say what happened');
+  assert.ok(!/location/i.test([...response.headers.keys()].join(',')), 'a customer was redirected somewhere');
+  assert.equal(
+    new OrderStore(new FileStorage(env.OLIBANA_ORDERS as string)).placements().length, 0,
+    'an order was recorded by a deployment that cannot take payment',
+  );
 });
 
 test('live mode verifies webhook signatures', async () => {
   const env = environment({ OLIBANA_MODE: 'live', OLIBANA_WEBHOOK_SECRET: SECRET });
   const unsigned = new Request(`https://olibana.test${WEBHOOK_PATH}`, { method: 'POST', body: '{}' });
-  assert.equal((await onRequest({ request: unsigned, env })).status, 400);
+  const response = await onRequest({ request: unsigned, env });
+
+  assert.equal(response.status, 400);
+  assert.equal(await response.text(), 'unverified');
+  // The status is not the point. The point is that nothing downstream ran.
+  assert.equal(
+    new OrderStore(new FileStorage(env.OLIBANA_ORDERS as string)).placements().length, 0,
+    'an unsigned payload reached order placement',
+  );
 });
 
 test('SANDBOX: selection to payment to confirmation, through the deployed adapter', async () => {

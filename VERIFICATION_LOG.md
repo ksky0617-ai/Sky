@@ -9,6 +9,25 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-22-017 · V0 + V1 + V3 + V4 · The suite audits itself; the deployment can be checked
+
+| | |
+| --- | --- |
+| **Target** | `test/meta/suite-audit.test.ts` (new), `/health`, `scripts/smoke-test.mjs` (new), `docs/RUNBOOK.md`, `HUMAN_GATE_QUEUE.md` |
+| **Why** | §35 and §53: "296 tests passed" is not evidence, and the suite had never been audited for tests that pass without proving anything. That is the highest propagation risk here — an unsound test silently invalidates every VERIFIED claim resting on it rather than failing. |
+| **Defect in my own scanner, found first** | The initial scan reported a false positive: it counted braces without skipping string and regex literals, so a regex containing `}` ended a test body early. **A checker that cannot parse is worse than none, because its output gets trusted.** The permanent version strips comments and literals, and four of its nine tests exist only to check the checker — including two that feed it known-bad input and require it to notice. |
+| **Two real findings in the suite** | (1) `spec-conformance` carried an `assert.ok(true)` used as a documentation device — a comment wearing a test's clothes, passing regardless and adding one to a number people read as evidence. Removed; the disclosure lives in prose and in this log. (2) **Four HTTP tests asserted only a status code.** A 404 that still renders the sandbox page, a 503 that still wrote an order, and a 400 that still reached order placement all pass a status-only assertion. All four now assert what must *not* have happened. |
+| **Defect in the health check, found by its own test** | The first version probed writability by taking the lock and appending nothing — which never reaches storage at all, so **a deployment whose writes went nowhere reported itself healthy**. It now performs a real zero-byte append: a genuine `open(O_APPEND)` that fails on a read-only filesystem and leaves no record. Caught by M96. |
+| **Defect found by the smoke test on its first run** | **Static pages carried no security headers locally.** `_headers` is a Cloudflare file and the local server ignored it, so local and deployed differed — §42 environment drift. A smoke test that passes against production but fails against local cannot gate a deploy, which is the only thing it is for. The local server now applies the same file. |
+| **Observed** | 313/313 pass. **Smoke test: 10/10 against a real running deployment** — site answers, health reports `ok / storage available / 0 published / 0 open runs / accepting=false`, no credentials or paths in the health body, security headers served on both the router's responses and the static site, all 10 internal links resolve, unknown path 404s, a nonexistent product is refused 422, an unsigned webhook 400, and the sandbox is not exposed. |
+| **Result** | **PASS** |
+| **Mutations** | M92 a test asserting nothing → caught. M93 a vacuous assertion → caught. M94 a skipped test → caught. M95 an HTTP test checking only status → caught. M96 the writability probe not writing → caught. M97 health always reports ok → caught by 2. M98 `accepting` always true → caught by 3. M99 the health response leaks the webhook secret → caught. |
+| **What `/health` deliberately does not say** | No secret, no path, no identifier, no order count. It is unauthenticated, so everything it returns is public; how many orders exist is the business's information. Asserted by a test that pins the exact key set. |
+| **Limitation** | The smoke test has run against a **local** deployment only. It has never run against Cloudflare, which is GATE-001 and needs an account. The suite audit checks structural soundness — assertions exist, are not vacuous, are not status-only — **not that any assertion is the right one**. A wrong assertion still passes it. |
+| **Commit** | written against `099f44f` |
+
+---
+
 ## V-2026-08-22-016 · V0 + V1 + V2 + V4 + V5 · The deployed function could not have run
 
 | | |

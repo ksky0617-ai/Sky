@@ -65,6 +65,36 @@ const types = {
   '.xml': 'application/xml', '.txt': 'text/plain; charset=utf-8',
 };
 
+/**
+ * Applies the built `_headers` file to static responses.
+ *
+ * Cloudflare Pages reads that file; this server did not, so static pages here
+ * carried no security headers while the deployed ones would. The smoke test
+ * caught it on its first run — and a smoke test that passes against production
+ * but fails against local (or the reverse) cannot gate a deploy, which is the
+ * only thing it is for.
+ *
+ * Only the `/*` block is honoured. That is all the build emits, and guessing at
+ * Cloudflare's fuller matching syntax would be inventing behaviour this server
+ * cannot actually promise.
+ */
+function staticHeaders(root) {
+  const file = resolve(root, '_headers');
+  if (!existsSync(file)) return {};
+  const headers = {};
+  let inGlobalBlock = false;
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    if (line.startsWith('#') || line.trim() === '') continue;
+    if (!line.startsWith(' ')) { inGlobalBlock = line.trim() === '/*'; continue; }
+    if (!inGlobalBlock) continue;
+    const at = line.indexOf(':');
+    if (at > 0) headers[line.slice(0, at).trim()] = line.slice(at + 1).trim();
+  }
+  return headers;
+}
+
+const STATIC_HEADERS = staticHeaders(root);
+
 async function toRequest(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -87,10 +117,13 @@ const server = createServer((req, res) => {
     let file = resolve(root, '.' + decodeURIComponent(req.url.split('?')[0]));
     if (existsSync(file) && statSync(file).isDirectory()) file = resolve(file, 'index.html');
     if (!existsSync(file)) {
-      res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
+      res.writeHead(404, { ...STATIC_HEADERS, 'content-type': 'text/html; charset=utf-8' });
       return res.end(readFileSync(resolve(root, '404.html')));
     }
-    res.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      ...STATIC_HEADERS,
+      'content-type': types[extname(file)] ?? 'application/octet-stream',
+    });
     res.end(readFileSync(file));
   })().catch((error) => {
     // Nothing is hidden: an unexpected failure here is a defect, not a page.

@@ -130,8 +130,12 @@ test('arriving at the checkout by GET sends you home rather than erroring', asyn
 });
 
 test('the webhook rejects anything that is not a POST', async () => {
-  const response = await handleRequest(options(), new Request(`https://olibana.test${WEBHOOK_PATH}`));
+  const o = options();
+  const response = await handleRequest(o, new Request(`https://olibana.test${WEBHOOK_PATH}`));
+
   assert.equal(response?.status, 405);
+  assert.equal(await response!.text(), 'method not allowed');
+  assert.equal(o.stores.orders.placements().length, 0, 'a GET to the webhook created something');
 });
 
 // --- the form post -------------------------------------------------------

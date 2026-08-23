@@ -201,13 +201,17 @@ test('terminality has exactly one encoding — no parallel list to drift', () =>
   assert.deepEqual([...derived].sort(), ['DELIVERED', 'PAYMENT_FAILED', 'REFUNDED']);
 });
 
-test('boundary: this file verifies transcription, not specification correctness', () => {
-  // Stated as an executable reminder rather than a comment, so it appears in
-  // the test output and cannot be overlooked when reading results.
-  //
-  // Confirmed here: the implementation matches the specification document.
-  // NOT confirmed here: that the specification is itself right, that the
-  // guards encode the correct business rule, or that any of this survives
-  // persistence, concurrency, or real I/O. Those remain unverified.
-  assert.ok(true);
-});
+/*
+ * BOUNDARY OF THIS FILE.
+ *
+ * Confirmed here: the implementation matches the specification document.
+ * NOT confirmed here: that the specification is itself right, that the guards
+ * encode the correct business rule, or that any of this survives persistence,
+ * concurrency, or real I/O.
+ *
+ * This was an `assert.ok(true)` so that it would print in the test output. That
+ * made it a comment wearing a test's clothes: it passed regardless of anything,
+ * and it added one to a number people read as evidence. The disclosure belongs
+ * in VERIFICATION_LOG.md, where it is, and here in prose, where it costs
+ * nothing and claims nothing.
+ */

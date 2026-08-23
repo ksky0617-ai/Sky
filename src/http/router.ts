@@ -46,6 +46,7 @@ import {
 } from '../checkout/checkout.ts';
 import { signWebhook, toCompletedCheckout, type SignedWebhook } from '../checkout/sandbox.ts';
 import { OrderRejected } from '../order/placement.ts';
+import { LogCorruptError } from '../persistence/append-log.ts';
 import type { OrderPlacement } from '../order/store.ts';
 import { escapeHtml } from '../site/markdown.ts';
 import { formatPrice } from '../site/product-page.ts';
@@ -54,6 +55,7 @@ export const CHECKOUT_PATH = '/checkout';
 export const WEBHOOK_PATH = '/webhooks/payment';
 export const CONFIRMATION_PATH = '/order/confirmation';
 export const SANDBOX_PATH = '/sandbox/pay';
+export const HEALTH_PATH = '/health';
 
 /**
  * Verifies that a webhook really came from the gateway.
@@ -363,6 +365,66 @@ async function sandbox(options: RouterOptions, request: Request): Promise<Respon
   });
 }
 
+/**
+ * What a deployment can say about itself without being asked to prove anything.
+ *
+ * This is how a deploy is checked from outside: it answers only if the function
+ * loaded, the configuration validated, and storage is reachable. Those are
+ * exactly the three things that have failed here — the function could not load
+ * on Workers at all, a half-configuration would have served in whichever half
+ * was set, and storage is the open question in PCQ-004.
+ *
+ * ## What it must not say
+ *
+ * No secret, no path, no key, no internal identifier. A health endpoint is
+ * unauthenticated by nature, so everything it returns is public. Counts of
+ * published products and open runs already are public — they are on the site.
+ * The storage *kind* is here because a deployment silently running without
+ * durable storage is the failure worth catching, and naming the kind does not
+ * name the location.
+ */
+function health(options: RouterOptions): Response {
+  let storage: 'available' | 'unavailable' | 'unreadable' = 'available';
+  let published = 0;
+  let openRuns = 0;
+
+  try {
+    published = options.stores.catalog.published().length;
+    openRuns = options.stores.runs.open().length;
+    // Read the order log too, so a corrupt one is reported rather than
+    // discovered by the first customer who reaches their confirmation. The
+    // count is deliberately NOT published: how many orders exist is the
+    // business's information, not a visitor's.
+    options.stores.orders.orderIds();
+    // A store that reads but cannot write is the state that must not look
+    // healthy: orders would be accepted and lost. This is a real write
+    // attempt of zero bytes, not a lock acquisition — an earlier version took
+    // the lock and appended nothing, which never reached the storage at all.
+    options.stores.orders.probeWritable();
+  } catch (error) {
+    storage = error instanceof LogCorruptError ? 'unreadable' : 'unavailable';
+  }
+
+  const canTakeOrders = options.sandbox !== undefined || published > 0;
+  const body = {
+    status: storage === 'available' ? 'ok' : 'degraded',
+    storage,
+    published,
+    openRuns,
+    // Says plainly whether a customer could complete a purchase right now.
+    accepting: storage === 'available' && openRuns > 0 && canTakeOrders,
+  };
+
+  return new Response(`${JSON.stringify(body, null, 2)}\n`, {
+    status: storage === 'available' ? 200 : 503,
+    headers: {
+      ...SECURITY_HEADERS,
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+    },
+  });
+}
+
 /** Routes a request. Anything not handled here is a static file. */
 export async function handleRequest(options: RouterOptions, request: Request): Promise<Response | null> {
   const { pathname } = new URL(request.url);
@@ -374,6 +436,13 @@ export async function handleRequest(options: RouterOptions, request: Request): P
       return new Response(null, { status: 303, headers: { ...SECURITY_HEADERS, location: '/' } });
     }
     return postCheckout(options, request);
+  }
+
+  if (pathname === HEALTH_PATH) {
+    if (request.method !== 'GET') {
+      return new Response('method not allowed', { status: 405, headers: SECURITY_HEADERS });
+    }
+    return health(options);
   }
 
   if (pathname === SANDBOX_PATH) return sandbox(options, request);
