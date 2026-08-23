@@ -10,9 +10,11 @@
  * unfinished palette from shipping by accident.
  */
 
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
+import { buildId } from './build-id.ts';
 import { headersFile } from './headers.ts';
 import { renderDocument, renderRobots, renderSitemap } from './layout.ts';
 import { buildRoutes, navigation } from './routes.ts';
@@ -63,9 +65,21 @@ export function build({ outDir, production = false, origin = '', catalogPath, ru
     bytes += Buffer.byteLength(contents, 'utf8');
   };
 
+  // Node can ask git; the Workers runtime cannot, which is why the reader is
+  // passed in rather than imported.
+  const build = buildId(process.env, () => {
+    try {
+      return execFileSync('git', ['rev-parse', 'HEAD'], {
+        encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      return null;
+    }
+  });
+
   emit('styles.css', stylesheet);
   for (const route of routes) {
-    emit(route.file, renderDocument({ route, nav, stylesheetHref: '/styles.css' }));
+    emit(route.file, renderDocument({ route, nav, stylesheetHref: '/styles.css', build }));
   }
   emit('sitemap.xml', renderSitemap(routes, origin));
   emit('robots.txt', renderRobots(origin));

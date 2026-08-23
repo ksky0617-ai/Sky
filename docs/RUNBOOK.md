@@ -10,8 +10,11 @@ Written to be followed by someone who did not build it.
 
 ```bash
 npm run verify                                    # build + full suite
-node --experimental-strip-types scripts/smoke-test.mjs http://127.0.0.1:<port>
+node --experimental-strip-types scripts/smoke-test.mjs http://127.0.0.1:<port> $(git rev-parse HEAD)
 ```
+
+Passing the commit makes the check fail on a **stale** deployment — one that
+answers correctly while serving code nobody deployed.
 
 Deploy only if both pass. The smoke test needs a running server:
 
@@ -20,10 +23,29 @@ npm run build
 OLIBANA_MODE=closed node --experimental-strip-types scripts/serve.mjs dist
 ```
 
-On Cloudflare Pages: build command `npm run build`, output directory `dist`.
-`functions/[[path]].ts` is picked up automatically.
+**There is no deploy command in this repository.** No `wrangler.toml`, no
+`npm run deploy`, no CI workflow — checked, not assumed. Pages builds from the
+repository, configured once in its dashboard:
 
-After deploying, run the smoke test **against the deployed origin**. A deploy is
+| Setting | Value |
+|---|---|
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| Functions | `functions/[[path]].ts`, picked up automatically |
+
+**Unverified, and the first thing to check if the deploy fails:** the function's
+import graph uses 45 explicit `.ts` specifiers across 17 modules. It imports no
+Node built-in — that is checked by `test/http/runtime-compat.test.ts` — but
+whether the Pages bundler resolves `.ts` specifiers has never been tested,
+because that needs a deployment. If it does not, the remedy is a build step, not
+a redesign.
+
+After deploying, run the smoke test **against the deployed origin, with the
+commit you deployed**:
+
+```bash
+node --experimental-strip-types scripts/smoke-test.mjs https://<origin> $(git rev-parse HEAD)
+``` A deploy is
 not verified until it passes there. The code passing locally has already proved
 insufficient once: the Pages function could not load on Workers at all while
 every test passed.

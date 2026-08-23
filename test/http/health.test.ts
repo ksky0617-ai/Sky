@@ -93,6 +93,7 @@ test('a healthy deployment answers 200 and says what it holds', async () => {
   const body = JSON.parse(await response!.text()) as Record<string, unknown>;
 
   assert.equal(response?.status, 200);
+  assert.equal(body.build, 'unknown', 'with no platform variable the build must not be invented');
   assert.equal(body.status, 'ok');
   assert.equal(body.storage, 'available');
   assert.equal(body.published, 1);
@@ -155,10 +156,13 @@ test('it leaks no secret, no path and no identifier', async () => {
   assert.ok(!/PRD_|RUN_|ORD_|EVT_|CUS_/.test(body), 'an internal identifier appeared');
   assert.ok(!/OLB-CT/.test(body), 'a product code appeared');
 
-  // Only the keys that were designed to be public.
+  // Only the keys that were designed to be public. `build` is deliberately
+  // among them: it is a commit SHA of a repository that is already public, and
+  // knowing which build is serving is the entire point of the marker. Every
+  // other key is a count or a state that the site itself already shows.
   assert.deepEqual(
     Object.keys(JSON.parse(body) as object).sort(),
-    ['accepting', 'openRuns', 'published', 'status', 'storage'],
+    ['accepting', 'build', 'openRuns', 'published', 'status', 'storage'],
   );
 });
 

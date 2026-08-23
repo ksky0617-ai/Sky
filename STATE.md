@@ -32,7 +32,7 @@
 | `PENDING_HUMAN_DECISIONS` | HG-2026-001 **RESOLVED** (ADR-005). Open: **ADR-006 brand-direction conflict** (non-blocking, required before design spec); **P0-7 legal entity** (HG-04) — now the single gate between this system and taking money, with `ACTIVATION_CHECKLIST` in `src/http/environment.ts` naming every step after it; **deployment credentials**. |
 | `NEXT_ACTION_1` | **User (parallel, unblocked):** fill `05_OUTERWEAR_SPEC_PACK.md` A–D → dispatch per §E |
 | `NEXT_ACTION_2` (`NEXT_ACTIONS`) | **Autonomous work on the current Completion Scope is exhausted.** What remains is either a Human Gate (P0-7 legal entity → payment gateway; deployment credentials) or in `POST_COMPLETION_QUEUE.md`. See §31.19: the stop reason is `HUMAN_GATE`, not `COMPLETED`. |
-| `NEXT_ACTION_3` | **GATE-001 — deployment credentials.** Everything a deploy needs is built and verified locally: the function loads on Workers (import-graph check), `/health` reports state, `scripts/smoke-test.mjs` passes 10/10 against a running server, and `docs/RUNBOOK.md` covers deploy, check, diagnose and roll back. The remaining action is one Pages project. See `HUMAN_GATE_QUEUE.md`. |
+| `NEXT_ACTION_3` | **GATE-001 — deployment credentials.** Everything a deploy needs is built and verified locally: `/health` reports state and a build marker, `scripts/smoke-test.mjs` passes **11/11 against a running server and is proven to fail on 13 false claims**, and `docs/RUNBOOK.md` covers deploy, check, diagnose and roll back. **There is no deployment command in this repository** — Pages builds from the repo, configured in its dashboard. Not verified: that Cloudflare can load the function (45 `.ts` specifiers the bundler must resolve). See `HUMAN_GATE_QUEUE.md`. |
 | `NEXT_ACTION_4` | **Blocked on quotation:** populate real `PriceTier` data → compute actual `minimumQuantity`. Module is ready and waiting for inputs. |
 | `RELEVANT_FILES` | §7 below |
 | `RESUME_ENTRYPOINT` | This file |
@@ -101,12 +101,22 @@ forbids growth from expanding the Core criteria. The repository contains **no**
 prior Pinterest, media-cluster or dropshipping implementation to restore —
 checked, not assumed. Recorded as PCQ-007.
 
+#### Recomputed — cycle 18, after the 14-step external audit
+
+| Criterion | Change |
+|---|---|
+| **Deployment auditor** | **NEWLY VERIFIED.** It had only ever run against a working deployment; every green result was equally consistent with "fine" and "cannot tell". It now fails on **13 distinct false claims**, each for the stated reason, with a control case that requires it to pass a correct deployment. |
+| **Build marker** | **NEW.** Nothing identified which build was serving, so a stale deployment would have passed every check. Now stamped into every page and reported by `/health`, cross-checkable, and returning `unknown` rather than inventing a value. |
+| Deployment path | **STILL NOT VERIFIED** — and now measured rather than assumed: no wrangler config, no deploy script, no CI, no tags, no public origin. |
+| **Claim accuracy** | Three mismatches found and corrected, one substantive: "the function loads on Workers" claimed more than the import-graph check proves. |
+| DNS · TLS | **UNVERIFIABLE** without a public deployment. The auditor now names which of them a run did not cover instead of passing silently. |
+
 #### Recomputed — cycle 17
 
 | Criterion | Change |
 |---|---|
 | Suite soundness | **NEW, VERIFIED.** Every test asserts, none is vacuous, none is skipped, no HTTP test checks only a status. Mutation-verified against four planted defects. Two real findings fixed. |
-| Deployment path | **STILL NOT VERIFIED**, but everything short of the account now is: the function loads on Workers, `/health` reports state, `scripts/smoke-test.mjs` passes **10/10 against a running deployment**, and the runbook covers deploy, check, diagnose and roll back. |
+| Deployment path | **STILL NOT VERIFIED.** No deployment exists: no wrangler config, no deploy script, no CI, no tags, no public origin — checked, not assumed. Everything short of the account is built: `/health` with a build marker, `scripts/smoke-test.mjs` at **11/11 against a running server**, and a runbook. The auditor itself is now verified — it fails on 13 distinct false claims. **Still unverified: that Cloudflare can load the function.** |
 | Security checked | Strengthened. The smoke test confirms headers are *served*, not merely set in code — and found that the local server was not serving them at all. |
 | Observability | **NEW.** `/health`, with a test pinning exactly which keys are public. |
 

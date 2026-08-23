@@ -16,9 +16,11 @@ export interface RenderOptions {
   readonly route: Route;
   readonly nav: ReadonlyArray<{ path: string; label: string }>;
   readonly stylesheetHref: string;
+  /** Which build produced this page. `unknown` when it cannot be determined. */
+  readonly build?: string;
 }
 
-export function renderDocument({ route, nav, stylesheetHref }: RenderOptions): string {
+export function renderDocument({ route, nav, stylesheetHref, build = 'unknown' }: RenderOptions): string {
   const title = route.path === '/' ? SITE_NAME : `${route.title} — ${SITE_NAME}`;
 
   const navItems = nav
@@ -29,6 +31,10 @@ export function renderDocument({ route, nav, stylesheetHref }: RenderOptions): s
     .join('');
 
   const robots = route.indexable === false ? '\n  <meta name="robots" content="noindex">' : '';
+
+  // Which build is serving. Without it a stale deployment is indistinguishable
+  // from a fresh one: every other check passes either way.
+  const buildMarker = `\n  <meta name="olibana-build" content="${escapeHtml(build)}">`;
 
   // A non-indexable page declares no canonical URL. The 404 document is served
   // for addresses that do not exist, so it has no canonical address of its own,
@@ -43,7 +49,7 @@ export function renderDocument({ route, nav, stylesheetHref }: RenderOptions): s
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(title)}</title>
-  <meta name="description" content="${escapeHtml(route.description)}">${robots}
+  <meta name="description" content="${escapeHtml(route.description)}">${robots}${buildMarker}
   <meta property="og:title" content="${escapeHtml(title)}">
   <meta property="og:description" content="${escapeHtml(route.description)}">
   <meta property="og:type" content="website">${canonical}

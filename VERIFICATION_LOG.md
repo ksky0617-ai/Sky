@@ -9,6 +9,25 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-22-018 · V0 + V3 + V4 · Verifying the deployment auditor itself
+
+| | |
+| --- | --- |
+| **Target** | `scripts/smoke-test.mjs`, `test/meta/deploy-audit.test.ts` (new), `src/site/build-id.ts` (new), `/health` |
+| **Method** | A 14-step external audit: reconstruct state, locate the deployment command, locate the verification command, execute it, capture raw output, distrust the prose, compare claimed against observed, and prove the auditor fails on false claims before recomputing anything. |
+| **Step 2 — the deployment command** | **There is none.** No `wrangler.toml`, no deploy script, no CI workflow, nothing referencing a Cloudflare token — searched, not assumed. Pages builds from the repository, configured in its dashboard. The runbook now says this outright, because "build command `npm run build`" could be read as a command in the repo. |
+| **Step 7 — the public URL** | **None exists.** The only origins anywhere are unit-test fixtures and a usage example in a comment. No tags, no deployment records. So DNS and TLS **cannot** be exercised, and the auditor now says which of them a given run did not cover rather than passing in silence. |
+| **Step 8 — the build marker was missing** | Nothing identified which build was serving. **A stale deployment would have passed every check.** `src/site/build-id.ts` reads the platform's own record, falls back to git, and returns `unknown` rather than inventing a value — a marker that guesses would be believed. It is stamped into every page and reported by `/health`, so the two can be cross-checked: a deployment where they disagree is half-updated. |
+| **Steps 4–6 — execution** | Ran against a real local deployment. **Exit code 0**, checked separately from the prose. 11/11, with the build marker matching `git rev-parse HEAD`. |
+| **Steps 9–11 — claimed vs observed: three mismatches, one substantive** | (1) Three documents said "10/10"; the count is 11. (2) The runbook could be read as implying a deploy command exists. (3) **The substantive one: I had written that the function "loads on Workers".** What is verified is that it imports no Node built-in — necessary, not sufficient. The Pages bundler must also resolve **45 explicit `.ts` specifiers across 17 modules**, and nothing has tested that. All three corrected; the third is now recorded as the first thing to check if the deploy fails. |
+| **Steps 12–13 — the auditor is now itself verified** | It had only ever run against a working deployment, so every green result was equally consistent with "the deployment is fine" and "the checker cannot tell". `test/meta/deploy-audit.test.ts` stands up servers that are wrong in exactly one way and requires a non-zero exit **naming that specific fault**: nothing listening · a stale build · a half-updated deployment · a missing marker · absent headers · a leaking `referrer-policy` · an exposed sandbox · a leaked credential · a degraded report · a broken link · no 404 · a checkout accepting a nonexistent product · a webhook accepting an unsigned payload. **13 false claims, 13 failures, each for the right reason.** A control case requires it to pass a correct deployment, without which every one of those would also pass against a checker that always fails. |
+| **Observed** | 330/330 pass. Smoke test 11/11, exit 0. |
+| **Result** | **PASS** — and the auditor's passes now mean something they did not mean yesterday. |
+| **Disclosed limit, recorded as a test** | The auditor believes what `/health` says about itself. A deployment reporting `ok` while its storage is broken passes. The health logic is tested separately against the real implementation; from outside, an honest report and a lie are indistinguishable. Written as a passing test so the limit shows in the output, and so it fails if the limit ever closes. |
+| **Commit** | written against `0bc5df8` |
+
+---
+
 ## V-2026-08-22-017 · V0 + V1 + V3 + V4 · The suite audits itself; the deployment can be checked
 
 | | |

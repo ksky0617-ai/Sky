@@ -48,12 +48,14 @@ const stores = {
 const options = configured.mode === 'sandbox'
   ? {
       stores,
+      env: process.env,
       gateway: new SandboxGateway(true),
       verifier: new HmacWebhookVerifier(configured.webhookSecret),
       sandbox: { enabled: true, secret: configured.webhookSecret },
     }
   : {
       stores,
+      env: process.env,
       gateway: new UnconfiguredGateway(),
       verifier: configured.mode === 'live'
         ? new HmacWebhookVerifier(configured.webhookSecret)

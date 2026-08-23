@@ -21,9 +21,10 @@ one of them is either done or in [`POST_COMPLETION_QUEUE.md`](./POST_COMPLETION_
 | `WHY_AUTONOMOUS_EXECUTION_IS_IMPOSSIBLE` | Account ownership and API credentials. Not a technical limit. |
 | `EXACT_HUMAN_ACTION_REQUIRED` | Create a Pages project pointing at this repository. Build command `npm run build`, output directory `dist`. Set `OLIBANA_MODE=closed`. Set nothing else. |
 | `PRECONDITIONS` | None. `closed` mode takes no orders, needs no secret and writes nothing. |
-| `WHAT_IS_ALREADY_COMPLETE` | `functions/[[path]].ts` (loadable on Workers — verified by import-graph check), `_headers` generated from the same constant the router uses, `validateEnvironment` refusing every half-configuration, `/health`, and `scripts/smoke-test.mjs` — which passes 10/10 against a real local deployment. |
-| `POST_GATE_EXECUTION_PLAN` | `node --experimental-strip-types scripts/smoke-test.mjs https://<the-deployment>` |
-| `VERIFICATION_AFTER_GATE` | All 10 smoke checks pass against the deployed origin. Then `DEPLOYMENT_PATH_VERIFIED = TRUE` and the Completion Gate is recomputed. |
+| `WHAT_IS_ALREADY_COMPLETE` | `functions/[[path]].ts`, `_headers` generated from the same constant the router uses, `validateEnvironment` refusing every half-configuration, `/health` with a build marker, and `scripts/smoke-test.mjs` — **11/11 against a real local deployment, and proven to fail on 13 distinct false claims** (`test/meta/deploy-audit.test.ts`). |
+| `WHAT_IS_NOT_VERIFIED` | **That Cloudflare can load the function.** The graph check proves it imports no Node built-in, which is necessary and not sufficient: the Pages bundler must also resolve **45 explicit `.ts` import specifiers across 17 modules**, and nothing here has tested that. If it cannot, the fix is a build step, not a redesign — but it is the first thing to look at if the deploy fails. |
+| `POST_GATE_EXECUTION_PLAN` | `node --experimental-strip-types scripts/smoke-test.mjs https://<the-deployment> $(git rev-parse HEAD)` — passing the commit makes it fail on a stale deployment. |
+| `VERIFICATION_AFTER_GATE` | All 11 smoke checks pass against the deployed origin **over https and a real hostname**, so DNS and TLS are exercised for the first time (a loopback run covers neither, and the auditor says so in its own output). Then `DEPLOYMENT_PATH_VERIFIED = TRUE` and the Completion Gate is recomputed. |
 | `REVERSIBLE` | **Yes.** A Pages project can be deleted. Nothing is published: the catalogue is empty, so the deployed site has no shop and no product page. |
 | `RISK_IF_SKIPPED` | The deployment path stays unverified, which is currently the single reason `COMPLETION = FALSE`. |
 

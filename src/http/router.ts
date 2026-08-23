@@ -48,6 +48,7 @@ import { signWebhook, toCompletedCheckout, type SignedWebhook } from '../checkou
 import { OrderRejected } from '../order/placement.ts';
 import { LogCorruptError } from '../persistence/append-log.ts';
 import type { OrderPlacement } from '../order/store.ts';
+import { buildId } from '../site/build-id.ts';
 import { escapeHtml } from '../site/markdown.ts';
 import { formatPrice } from '../site/product-page.ts';
 
@@ -79,6 +80,11 @@ export class UnconfiguredVerifier implements WebhookVerifier {
 
 export interface RouterOptions {
   readonly stores: CheckoutStores;
+  /**
+   * The platform's environment, read only for the build identifier. Absent
+   * means the identifier is `unknown`, which is a real answer.
+   */
+  readonly env?: Readonly<Record<string, string | undefined>>;
   readonly gateway: PaymentGateway;
   readonly verifier: WebhookVerifier;
   /**
@@ -407,6 +413,9 @@ function health(options: RouterOptions): Response {
 
   const canTakeOrders = options.sandbox !== undefined || published > 0;
   const body = {
+    // Which build is answering. Compared against the marker in the served HTML
+    // by the smoke test: if they disagree, the deployment is inconsistent.
+    build: buildId(options.env ?? {}),
     status: storage === 'available' ? 'ok' : 'degraded',
     storage,
     published,

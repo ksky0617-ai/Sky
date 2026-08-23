@@ -1,7 +1,11 @@
 /**
  * Checks a running deployment from outside it.
  *
- *   node --experimental-strip-types scripts/smoke-test.mjs https://olibana.pages.dev
+ *   node --experimental-strip-types scripts/smoke-test.mjs https://olibana.pages.dev [expected-build]
+ *
+ * Passing the commit you deployed makes this fail on a stale deployment. Without
+ * it, the build check still verifies that the function and the static build
+ * agree with each other — a deployment where they disagree is half-updated.
  *
  * This is what verifies a deploy. Everything else in this repository tests the
  * code; this tests the thing that is actually serving. The two have already
@@ -19,8 +23,9 @@
  */
 
 const origin = (process.argv[2] ?? '').replace(/\/$/, '');
+const expectedBuild = process.argv[3];
 if (origin === '') {
-  process.stderr.write('usage: smoke-test.mjs <origin>\n');
+  process.stderr.write('usage: smoke-test.mjs <origin> [expected-build]\n');
   process.exit(2);
 }
 
@@ -42,6 +47,22 @@ function expect(condition, message) {
 }
 
 const get = (path, init) => fetch(`${origin}${path}`, { redirect: 'manual', ...init });
+
+// --- what this run can and cannot cover ---------------------------------
+
+const url = new URL(origin);
+const isLocal = ['127.0.0.1', 'localhost', '::1'].includes(url.hostname);
+const coverage = [];
+coverage.push(
+  url.protocol === 'https:'
+    ? 'TLS: exercised (https)'
+    : 'TLS: NOT exercised — this origin is plain http',
+);
+coverage.push(
+  isLocal
+    ? 'DNS: NOT exercised — this origin is a loopback address'
+    : `DNS: exercised (${url.hostname} resolved)`,
+);
 
 // --- the deployment is alive --------------------------------------------
 
@@ -70,6 +91,36 @@ await check('health leaks nothing', async () => {
   expect(!/secret|token|key|password/i.test(body), '/health mentions a credential');
   expect(!/\/(home|var|tmp|Users)\//.test(body), '/health exposes a filesystem path');
   return 'no credentials, no paths';
+});
+
+await check('the build marker identifies what is serving', async () => {
+  // Step 8's build/version marker. Two independent sources: the function
+  // reports what the platform says it built, the HTML carries what the build
+  // stamped. Both must exist, and a deployment where they disagree is
+  // half-updated — the function from one commit, the pages from another.
+  const health = await (await get('/health')).json();
+  const home = await (await get('/')).text();
+  const marker = /<meta name="olibana-build" content="([^"]*)">/.exec(home)?.[1];
+
+  expect(typeof health.build === 'string' && health.build !== '', '/health reports no build');
+  expect(marker !== undefined && marker !== '', 'the served HTML carries no build marker');
+
+  const known = (value) => value !== 'unknown';
+  if (known(health.build) && known(marker)) {
+    expect(
+      health.build === marker,
+      `the function reports build ${health.build} but the pages were built at ${marker} — ` +
+        'this deployment is half-updated',
+    );
+  }
+  if (expectedBuild !== undefined) {
+    const shortened = expectedBuild.slice(0, 12);
+    expect(
+      marker === shortened,
+      `expected build ${shortened}, deployment is serving ${marker} — this is a stale deployment`,
+    );
+  }
+  return `function=${health.build}, pages=${marker}${expectedBuild ? ', matches expected' : ''}`;
 });
 
 // --- the security posture survived deployment ---------------------------
@@ -156,11 +207,18 @@ await check('the sandbox is not exposed', async () => {
 
 // --- report --------------------------------------------------------------
 
-process.stdout.write(`\nsmoke test — ${origin}\n\n${results.join('\n')}\n\n`);
 process.stdout.write(
-  failed === 0
-    ? 'all checks passed. This says the deployment serves, refuses correctly, and leaks nothing.\n' +
-      'It does NOT say a payment works — no payment was attempted.\n'
-    : `${failed} check(s) failed. The deployment is not verified.\n`,
+  `\nsmoke test — ${origin}\n  ${coverage.join('\n  ')}\n\n${results.join('\n')}\n\n`,
 );
+if (failed === 0) {
+  const uncovered = ['payment — none was attempted'];
+  if (url.protocol !== 'https:') uncovered.push('TLS — this origin is plain http');
+  if (isLocal) uncovered.push('DNS — this origin is a loopback address');
+  process.stdout.write(
+    'all checks passed. This says the deployment serves, refuses correctly, and leaks nothing.\n' +
+      `NOT covered by this run:\n${uncovered.map((u) => `  - ${u}`).join('\n')}\n`,
+  );
+} else {
+  process.stdout.write(`${failed} check(s) failed. The deployment is not verified.\n`);
+}
 process.exit(failed === 0 ? 0 : 1);

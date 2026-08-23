@@ -325,3 +325,29 @@ test('the static build ships the same headers the router sets', () => {
     assert.ok(file.includes(`${name}: ${value}`), `_headers is missing ${name}`);
   }
 });
+
+test('every page carries a build marker', () => {
+  // Without it a deployment serving a stale build is indistinguishable from one
+  // serving the current commit: every other check passes either way.
+  for (const page of pages) {
+    assert.match(
+      html(page),
+      /<meta name="olibana-build" content="[^"]+">/,
+      `${page} carries no build marker`,
+    );
+  }
+});
+
+test('the build marker refuses to invent a value it does not have', async () => {
+  // `unknown` is a real answer. A marker that guesses would be believed.
+  const { buildId, UNKNOWN_BUILD } = await import('../../src/site/build-id.ts');
+
+  assert.equal(buildId({}, () => null), UNKNOWN_BUILD);
+  assert.equal(buildId({}, () => '   '), UNKNOWN_BUILD);
+  assert.equal(buildId({ CF_PAGES_COMMIT_SHA: '' }, () => null), UNKNOWN_BUILD);
+
+  // The platform's own record wins over the working tree, because the platform
+  // is what actually built the thing being served.
+  assert.equal(buildId({ CF_PAGES_COMMIT_SHA: 'abcdef1234567890' }, () => 'ffff'), 'abcdef123456');
+  assert.equal(buildId({}, () => '0123456789abcdef\n'), '0123456789ab');
+});

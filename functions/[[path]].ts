@@ -78,13 +78,14 @@ async function optionsFor(env: PagesContext['env']): Promise<RouterOptions> {
   };
 
   if (configured.mode === 'closed') {
-    return { stores, gateway: new UnconfiguredGateway(), verifier: new UnconfiguredVerifier() };
+    return { stores, env, gateway: new UnconfiguredGateway(), verifier: new UnconfiguredVerifier() };
   }
 
   const secret = configured.webhookSecret as string;
   if (configured.mode === 'sandbox') {
     return {
       stores,
+      env,
       gateway: new SandboxGateway(true),
       verifier: new HmacWebhookVerifier(secret),
       sandbox: { enabled: true, secret },
@@ -93,7 +94,7 @@ async function optionsFor(env: PagesContext['env']): Promise<RouterOptions> {
 
   // live. The provider-specific gateway is the one thing a human must supply,
   // and until they do this refuses rather than inventing a checkout URL.
-  return { stores, gateway: new UnconfiguredGateway(), verifier: new HmacWebhookVerifier(secret) };
+  return { stores, env, gateway: new UnconfiguredGateway(), verifier: new HmacWebhookVerifier(secret) };
 }
 
 export async function onRequest(context: PagesContext): Promise<Response> {
