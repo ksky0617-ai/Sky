@@ -436,7 +436,13 @@ test('the internal error page says nothing about the error', async () => {
 
   assert.equal(response.status, 500);
   assert.ok(!/stack|Error:|at \w+ \(|\/home\/|\.ts:|node_modules/i.test(body), `the page leaks internals:\n${body}`);
-  assert.ok(!/OLIBANA_|secret|token|key=/i.test(body), 'the page mentions configuration');
+  // Looks for a leaked VALUE, not for a word. The first version matched
+  // /token/ and duly fired on a CSS comment in the page that used the word in
+  // prose — the same false-positive class that has now caught a checker in
+  // this repository four times. What matters is an environment variable name,
+  // an assignment, or something that looks like a credential.
+  assert.ok(!/OLIBANA_[A-Z_]+/.test(body), 'the page names a configuration variable');
+  assert.ok(!/(secret|token|password|api[_-]?key)\s*[:=]/i.test(body), 'the page carries a credential');
   // It still tells the visitor the one thing they need: no money moved.
   assert.match(body, /no payment was taken/i);
 });

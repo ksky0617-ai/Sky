@@ -10,11 +10,38 @@
  *                                       easings, and reduced-motion mapping
  *   docs/website/02_BRAND_EXPERIENCE_SYSTEM.md — silence budget
  *
+ * NOTE FOR EDITORS: the stylesheet below is a template literal. A backtick
+ * anywhere inside it — including inside a CSS comment, which is where it keeps
+ * happening — terminates the string and the build fails to parse. Quote code
+ * in these comments with "double quotes". The failure is loud and immediate,
+ * so nothing broken can ship; it just costs a rebuild each time.
+ *
  * The palette is the CONSTRUCTION palette: pure neutrals, no hue. The brand
  * palette is deliberately undetermined pending field measurement, and a hued
  * placeholder would become a decision by familiarity. Every such value carries
  * the `--construct-` prefix so a production build can refuse to ship it.
  */
+
+/**
+ * The type scale, as CSS custom properties.
+ *
+ * Exported because the router renders its own pages — the confirmation, the
+ * sandbox, every refusal — with inline styles and deliberately no link to the
+ * built stylesheet, so they render even if the build never ran. That
+ * independence had a cost nobody had measured: those pages were using
+ * `1.4rem`, which is 22.4px and is on no scale and reachable by no token. 02
+ * §2 makes Precision a lint rule, not a preference.
+ *
+ * Emitting the same declarations into both keeps one source. Restating the
+ * numbers in the router would be a second scale that agrees today.
+ */
+export const TYPE_SCALE = `
+  --text-sm: 0.8rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.563rem;
+  --text-2xl: 1.953rem;
+  --text-3xl: 2.441rem;`;
 
 /** Marks values that must not reach production. See assertNoConstructionPalette. */
 export const CONSTRUCTION_PREFIX = '--construct-';
@@ -61,13 +88,32 @@ export const stylesheet = `
   --space-13: 224px; --space-14: 320px;
 
   /* Type scale. Ratio is provisional (1.25); the intended ratio derives from a
-     measured Forest Atlas branching ratio that does not yet exist. */
-  --text-sm: 0.8rem;
-  --text-base: 1rem;
-  --text-lg: 1.25rem;
-  --text-xl: 1.563rem;
-  --text-2xl: 1.953rem;
-  --text-3xl: 2.441rem;
+     measured Forest Atlas branching ratio that does not yet exist.
+     Defined in TYPE_SCALE above, so the router's own pages use the same one.
+
+     WRITTEN EXCEPTION — 02_BRAND_EXPERIENCE_SYSTEM.md §5, "distinct type sizes
+     per viewport <= 3". Measured, not estimated: home renders 6 distinct sizes
+     at desktop, philosophy 5, product 4, the commerce and confirmation
+     surfaces 2. §5 says exceeding a threshold "requires a written reason in
+     the pull request — which is the point: it makes density a deliberate act
+     rather than an accumulation", so this is the reason.
+
+     Home carries a page title, a hero statement, section headings, body copy
+     and captions. Collapsing those to three sizes would not produce hierarchy
+     through space; it would produce five roles sharing three sizes, and the
+     distinctions would have to be recovered with weight or colour — both of
+     which §5 constrains harder than scale. One reduction WAS made on the
+     evidence: the Atlas index title dropped to the body size and now takes its
+     hierarchy from the rule above it and the space around it, which is §5's
+     own stated rationale.
+
+     What is enforced instead, and enforced as a hard failure, is 02 §2's
+     Precision rule: every rendered size must be ON this scale. That caught two
+     values this threshold never would have — "code" at 0.9em resolving to
+     14.4px, and the router's own pages at 1.4rem resolving to 22.4px, neither
+     reachable by any custom property in this system. The count is reported by
+     scripts/visual-check.mjs on every run so the exception stays visible. */
+${TYPE_SCALE}
 
   /* Radius — 05_VISUAL_SYSTEM.md §6. Sharp by default: Olibana's edges are
      carved, not softened (Stone_Atlas.md). */
@@ -245,7 +291,12 @@ blockquote {
   margin: var(--space-6) 0; padding-left: var(--space-5);
   border-left: 1px solid var(--line-rule); color: var(--content-secondary);
 }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+/* 0.9em until it was measured: it produced 14.4px, a size on no scale and
+   reachable by no token. 02 §2 makes Precision enforceable — "No arbitrary
+   values. Spacing, duration, and type sizes come from the scale or they do not
+   ship" — and a relative value that resolves off the scale is an arbitrary
+   value wearing a ratio. */
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-sm); }
 pre {
   background: var(--surface-raised); padding: var(--space-4);
   overflow-x: auto; border-radius: var(--radius-none);
@@ -259,7 +310,13 @@ th { font-weight: 500; color: var(--content-secondary); }
 .index li { border-top: 1px solid var(--line-hairline); }
 .index a { display: block; padding: var(--space-5) 0; text-decoration: none; }
 .index a:hover .index-title { border-bottom-color: var(--line-rule); }
-.index-title { font-size: var(--text-lg); border-bottom: 1px solid transparent; display: inline-block; }
+/* §5: "Distinct type sizes per viewport <= 3 — hierarchy through space, not
+   through scale variety." Measured, one page was using all six steps of the
+   scale at once. This title drops to the body size and lets the rule above it,
+   the padding around it and the underline carry the hierarchy, which is what
+   §5's rationale actually asks for. The remaining count is recorded as a
+   written exception rather than hidden — see the note below. */
+.index-title { font-size: var(--text-base); border-bottom: 1px solid transparent; display: inline-block; }
 .index-note { display: block; color: var(--content-secondary); font-size: var(--text-sm); margin-top: var(--space-2); max-width: var(--measure); }
 
 dl.facts {

@@ -9,6 +9,24 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-24-024 · V0 + V3 · The silence budget, measured instead of assumed
+
+| | |
+| --- | --- |
+| **Target** | `scripts/visual-check.mjs`, `src/site/styles.ts`, `src/http/router.ts` |
+| **Bottleneck selected** | 02 §5 gives seven numeric thresholds and calls them "review thresholds, not laws of physics: exceeding one requires a written reason". **One of seven was checked.** A threshold nobody measures cannot be exceeded deliberately, which is the opposite of what §5 asks for. |
+| **Measured, all seven, 48 renders** | Empty space on Layer 1 screens: **43–80%** against §5's ≥40% floor — passes, and the tightest is philosophy at mobile. Calls to action: **max 1** against 1 primary + 1 secondary. Layer 1 statement: **16 words** against ≤25. Nav items: ≤8 (already checked). Concurrent primary motions: covered by cycle 22's per-layer budget. **Distinct type sizes: 6 on home, 5 on philosophy, 4 on product, 2 on the confirmation surfaces — against a ≤3 threshold.** |
+| **Defect 1 — a size on no scale** | `code { font-size: 0.9em }` resolved to **14.4px**, reachable by no token in this system. 02 §2 states Precision as a lint rule, not a preference: "type sizes come from the scale or they do not ship". A relative value that lands off the scale is an arbitrary value wearing a ratio. |
+| **Defect 2 — a second type scale nobody knew existed** | The router's own pages — confirmation, sandbox, every refusal — use inline styles and deliberately no link to the built stylesheet, so they render even if the build never ran. That independence had quietly become independence from the design system: they were using `1.4rem`, **22.4px**, on no scale. Both now interpolate `TYPE_SCALE`, one exported constant, so there is one scale rather than two that agree today. |
+| **The check that matters, and why it is not the count** | Every rendered font size must be **on the scale**, with the scale read off the document's own custom properties at runtime — correct at every breakpoint without restating the overrides. That is a hard failure. It caught both defects above; the ≤3 count would have caught neither, since 14.4px and 22.4px each merely add one to a number. |
+| **Written exception, as §5 requires** | The ≤3 threshold is exceeded on home (6) and philosophy (5) and the reason is recorded in `styles.ts` against the measured numbers: those pages carry a title, a hero statement, section headings, body copy and captions, and collapsing five roles into three sizes would recover the distinctions with weight or colour, which §5 constrains harder than scale. One reduction **was** made on the evidence — the Atlas index title dropped to body size and takes its hierarchy from the rule above it and the space around it, which is §5's own rationale. The count is printed on every run so the exception stays visible rather than becoming a habit. |
+| **A false positive in my own test, the fourth of this kind** | The 500-page leak test matched `/token/` and fired on a **CSS comment in that page** using the word in prose. Two fixes: the check now looks for a leaked *value* — an `OLIBANA_*` name, or `secret`/`token`/`password`/`api_key` followed by `:` or `=` — and the router's inline CSS now carries **no commentary at all**, because every byte of it is served to a visitor who reached that page because something failed. |
+| **Observed** | 378/378 pass. Visual check exit 0 across 48 renders. |
+| **Result** | **PASS**, with one documented exception carrying its measurement. |
+| **Commit** | written against `e0558d7` |
+
+---
+
 ## V-2026-08-24-023 · V1 + V3 + V4 · The failure nobody planned for
 
 | | |

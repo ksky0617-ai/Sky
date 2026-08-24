@@ -51,6 +51,7 @@ import type { OrderPlacement } from '../order/store.ts';
 import { buildId } from '../site/build-id.ts';
 import { escapeHtml } from '../site/markdown.ts';
 import { formatPrice } from '../site/product-page.ts';
+import { TYPE_SCALE } from '../site/styles.ts';
 
 export const CHECKOUT_PATH = '/checkout';
 export const WEBHOOK_PATH = '/webhooks/payment';
@@ -129,6 +130,19 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
 function page(status: number, title: string, body: string, mode: 'frictionless' | 'reassuring' = 'frictionless'): Response {
   // Deliberately plain and self-contained: this is what a customer sees when
   // something went wrong, and it must not depend on the build having run.
+  //
+  // The inline CSS carries NO commentary. Everything in it is bytes served to
+  // a visitor on a page they reached because something failed, and a developer
+  // note is neither useful to them nor free. It also stopped being harmless:
+  // a comment here containing the word "token" tripped the check that looks
+  // for leaked credentials in this exact response — the fourth time in this
+  // repository a checker has matched prose describing the thing it hunts.
+  //
+  // The type scale is interpolated from TYPE_SCALE rather than restated,
+  // because these pages were using `1.4rem` — 22.4px, on no scale and
+  // reachable by no custom property. Their independence from the built
+  // stylesheet had quietly become independence from the design system, which
+  // 02 §2 makes a lint failure rather than a preference.
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -142,7 +156,7 @@ function page(status: number, title: string, body: string, mode: 'frictionless' 
      to them — at which point every control on them was under the WCAG 2.2 AA
      24px target minimum. A page a customer reaches after paying is not a place
      to relax an accessibility floor. */
-  :root { color-scheme: light dark; }
+  :root { color-scheme: light dark;${TYPE_SCALE} }
   /* Canvas/CanvasText declared rather than inherited from the browser. These
      pages left the ground colour to the UA, which meant their text contrast
      could not be computed from the page at all — a checker had to guess a
@@ -150,10 +164,10 @@ function page(status: number, title: string, body: string, mode: 'frictionless' 
      also the same shape as the defect that put the purchase button's label at
      1:1: a colour that resolved to something nobody wrote down. */
   body {
-    font: 16px/1.6 system-ui, sans-serif; margin: 0; padding: 3rem 1.5rem; max-width: 34rem;
+    font: var(--text-base)/1.6 system-ui, sans-serif; margin: 0; padding: 3rem 1.5rem; max-width: 34rem;
     background: Canvas; color: CanvasText;
   }
-  h1 { font-size: 1.4rem; font-weight: 500; letter-spacing: 0.02em; }
+  h1 { font-size: var(--text-xl); font-weight: 500; letter-spacing: 0.02em; }
   p { margin: 1rem 0; }
   ul { padding-left: 1.2rem; }
   a { color: inherit; display: inline-block; padding: 3px 0; }

@@ -142,6 +142,7 @@ const browser = await chromium.launch({
 const errors = [];
 const motionSeen = new Map();
 const layerMotion = new Map();
+const silenceSeen = [];
 // Every viewport in BOTH light states. The dusk palette had been defined since
 // the stylesheet was written and never once rendered, because nothing activated
 // it — so its contrast was unknown rather than acceptable. 05_VISUAL_SYSTEM.md
@@ -287,6 +288,66 @@ for (const [name, path] of routes) {
 
       const button = document.querySelector('form.order button');
       return {
+        /* The silence budget — 02_BRAND_EXPERIENCE_SYSTEM.md §5.
+           Seven numeric thresholds, of which one (nav items) was checked. §5
+           calls them "review thresholds, not laws of physics: exceeding one
+           requires a written reason". A threshold nobody measures cannot be
+           exceeded deliberately, which is the opposite of what §5 asks for —
+           so they are measured, and any exception is written down against a
+           number rather than an impression. */
+        silence: (() => {
+          const visible = (el) => el.getClientRects().length > 0 && (el.textContent || '').trim() !== '';
+          const sizes = new Set();
+          for (const el of document.querySelectorAll('main *')) {
+            if (visible(el) && ownText(el)) sizes.add(getComputedStyle(el).fontSize);
+          }
+          // §5: ">= 40% of viewport" empty on Layer 1. Approximated as the
+          // share of the first screen not covered by a box that paints text,
+          // sampled on a grid — an exact areal measure would need the
+          // compositor, and this is a threshold, not a physical constant.
+          const step = 16;
+          let covered = 0;
+          let total = 0;
+          const boxes = [...document.querySelectorAll('main *, header *, footer *')]
+            .filter((el) => visible(el) && ownText(el))
+            .map((el) => el.getBoundingClientRect());
+          for (let y = 0; y < innerHeight; y += step) {
+            for (let x = 0; x < innerWidth; x += step) {
+              total += 1;
+              if (boxes.some((b) => x >= b.left && x <= b.right && y >= b.top && y <= b.bottom)) covered += 1;
+            }
+          }
+          const buttons = [...document.querySelectorAll('button, form.order button, a.cta')].filter(visible);
+
+          /* 02 §2 makes Precision enforceable: "No arbitrary values. Spacing,
+             duration, and type sizes come from the scale or they do not ship."
+             The scale is read off the document's own custom properties, so this
+             is correct at every viewport without restating the breakpoint
+             overrides here — and it caught `code { font-size: 0.9em }`
+             resolving to 14.4px, a size on no scale and reachable by no token.
+             A relative value that lands off the scale is an arbitrary value
+             wearing a ratio. */
+          const root = getComputedStyle(document.documentElement);
+          const probe = document.createElement('div');
+          document.body.appendChild(probe);
+          const scale = new Set();
+          for (const token of ['--text-sm', '--text-base', '--text-lg', '--text-xl', '--text-2xl', '--text-3xl']) {
+            probe.style.fontSize = root.getPropertyValue(token).trim();
+            scale.add(getComputedStyle(probe).fontSize);
+          }
+          probe.remove();
+          const offScale = [...sizes].filter((size) => !scale.has(size));
+
+          return {
+            offScale,
+            scale: [...scale],
+            typeSizes: [...sizes].sort(),
+            emptyShare: total === 0 ? 1 : Number((1 - covered / total).toFixed(3)),
+            callsToAction: buttons.length,
+            statementWords: [...document.querySelectorAll('.statement')]
+              .map((el) => (el.textContent || '').trim().split(/\s+/).length),
+          };
+        })(),
         lowContrast: [...new Set(lowContrast)],
         contrastUndetermined: [...document.querySelectorAll('main *, header *, footer *')]
           .filter((el) => ownText(el) && el.getClientRects().length > 0)
@@ -320,6 +381,7 @@ for (const [name, path] of routes) {
         // run says which pages actually exercised it rather than assuming all
         // of them did.
         scrollable: document.documentElement.scrollHeight > document.documentElement.clientHeight,
+        layer: document.body.dataset.layer ?? '',
         textLen: (main.innerText || '').trim().length,
         overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         hidden: [...main.children].filter((el) => getComputedStyle(el).opacity === '0').length,
@@ -389,6 +451,29 @@ for (const [name, path] of routes) {
     if (m.lowContrast.length > 0) {
       errors.push(`${id}: WCAG 1.4.3 contrast failures — ${m.lowContrast.join(', ')}`);
     }
+    // §5 thresholds, reported for every route and failed only where §5 states a
+    // hard limit. The rest are printed so an exception is a written decision
+    // against a measured number rather than something nobody looked at.
+    const layerOfRoute = m.layer;
+    if (m.silence.callsToAction > 2) {
+      errors.push(`${id}: ${m.silence.callsToAction} calls to action, over §5's 1 primary + 1 secondary`);
+    }
+    for (const words of m.silence.statementWords) {
+      if (words > 25) errors.push(`${id}: a statement block runs to ${words} words, over §5's 25`);
+    }
+    if (layerOfRoute === '1' && m.silence.emptyShare < 0.4) {
+      errors.push(`${id}: ${(m.silence.emptyShare * 100).toFixed(0)}% empty on a Layer 1 screen, under §5's 40%`);
+    }
+    if (m.silence.offScale.length > 0) {
+      // A hard failure, unlike the count below: §2 states this as a lint rule,
+      // not a review threshold.
+      errors.push(
+        `${id}: type size(s) ${m.silence.offScale.join(', ')} are not on the scale ` +
+        `(${m.silence.scale.join(', ')}) — 02 §2 Precision`,
+      );
+    }
+    silenceSeen.push(`${id} types=${m.silence.typeSizes.length}[${m.silence.typeSizes.join(',')}] empty=${(m.silence.emptyShare * 100).toFixed(0)}% cta=${m.silence.callsToAction}`);
+
     if (m.contrastUndetermined > 0) {
       // Not a pass. A page whose text sits on the browser's canvas rather than
       // a colour it declares has a contrast ratio nobody here can compute, and
@@ -487,6 +572,8 @@ for (let i = 1; i < layers.length; i += 1) {
   }
 }
 if (layers.length < 2) errors.push('only one layer was measured, so a descending budget is UNVERIFIED');
+
+console.log(`\nsilence budget (02 §5): ${silenceSeen.join(' | ')}`);
 
 console.log(errors.length > 0
   ? `\nERRORS:\n${errors.join('\n')}`
