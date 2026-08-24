@@ -33,6 +33,25 @@ export interface Route {
   readonly description: string;
   /** Rendered <main> content. */
   readonly body: string;
+  /**
+   * Depth in the world — 02_BRAND_EXPERIENCE_SYSTEM.md §3.
+   *
+   * 1 WORLD (why Olibana exists) · 2 DESIGN (how the work is made) ·
+   * 3 COMMERCE (what you can own). Not decoration: §3 requires a **descending
+   * motion budget** — "the deeper a visitor goes toward purchase, the quieter
+   * the interface becomes" — and a budget that descends needs something to
+   * descend along. Without this field the motion system had no idea which
+   * route it was on, and every page from the home portal to the purchase form
+   * carried identical motion.
+   */
+  readonly layer: 1 | 2 | 3;
+  /**
+   * §3's mode table. Governs the motion budget and is emitted into the
+   * document, so the rule is applied by the stylesheet at the provider level
+   * rather than remembered per component — §3: "It cannot be re-enabled by an
+   * individual component."
+   */
+  readonly mode: 'immersive' | 'informative' | 'frictionless' | 'reassuring';
   /** Shown in primary navigation when set. */
   readonly nav?: { readonly label: string; readonly order: number };
   /** Excluded from the sitemap (error pages). */
@@ -118,6 +137,8 @@ function atlasPage(atlas: AtlasSpec): Route {
 
   return {
     path: `/nature/${atlas.slug}`,
+    layer: 1,
+    mode: 'immersive',
     file: `nature/${atlas.slug}/index.html`,
     title: atlas.title,
     description: atlas.description,
@@ -154,6 +175,8 @@ function homePage(): Route {
 
   return {
     path: '/',
+    layer: 1,
+    mode: 'immersive',
     file: 'index.html',
     title: 'Olibana',
     description: 'A design practice deriving form from the measured structure of nature.',
@@ -182,6 +205,8 @@ function naturePage(): Route {
 
   return {
     path: '/nature',
+    layer: 1,
+    mode: 'immersive',
     file: 'nature/index.html',
     title: 'Nature',
     description: 'Four Atlases — river, stone, forest and light — and the design rules drawn from them.',
@@ -202,6 +227,8 @@ function philosophyPage(): Route {
 
   return {
     path: '/olibana/philosophy',
+    layer: 1,
+    mode: 'immersive',
     file: 'olibana/philosophy/index.html',
     title: 'Philosophy',
     description: 'Why Olibana derives form from measured natural structure rather than from reference.',
@@ -223,6 +250,8 @@ function designLanguagePage(): Route {
 
   return {
     path: '/olibana/design-language',
+    layer: 2,
+    mode: 'informative',
     file: 'olibana/design-language/index.html',
     title: 'Design Language',
     description: 'The rules Olibana designs by, and the criteria every piece is evaluated against.',
@@ -259,6 +288,8 @@ not the brand palette, and its contrast has not been validated.</p>
 
   return {
     path: '/legal/accessibility',
+    layer: 2,
+    mode: 'reassuring',
     file: 'legal/accessibility/index.html',
     title: 'Accessibility',
     description: 'What this site implements for accessibility, and what has not yet been verified.',
@@ -279,6 +310,8 @@ function notFoundPage(): Route {
 
   return {
     path: '/404',
+    layer: 2,
+    mode: 'reassuring',
     file: '404.html',
     title: 'Page not found',
     description: 'This page does not exist.',
@@ -294,6 +327,8 @@ function productSlug(product: ProductRevision): string {
 function productPage(product: ProductRevision, run: PreorderWindow | null): Route {
   return {
     path: `/products/${productSlug(product)}`,
+    layer: 3,
+    mode: 'informative',
     file: `products/${productSlug(product)}/index.html`,
     title: product.name,
     description: product.summary,
@@ -304,6 +339,8 @@ function productPage(product: ProductRevision, run: PreorderWindow | null): Rout
 function shopPage(products: readonly ProductRevision[]): Route {
   return {
     path: '/shop',
+    layer: 3,
+    mode: 'informative',
     file: 'shop/index.html',
     title: 'Shop',
     description: 'Garments currently offered by Olibana.',

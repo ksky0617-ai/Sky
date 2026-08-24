@@ -20,6 +20,11 @@ export interface RenderOptions {
   readonly build?: string;
 }
 
+// 02_BRAND_EXPERIENCE_SYSTEM.md §3: "the motion system reads the active route's
+// mode. On Frictionless routes the brand motion layer is disabled at the
+// provider level, not per-component. It cannot be re-enabled by an individual
+// component." The layer and mode ride on <body>, so the stylesheet applies the
+// budget from one place and no component can opt itself back in.
 export function renderDocument({ route, nav, stylesheetHref, build = 'unknown' }: RenderOptions): string {
   const title = route.path === '/' ? SITE_NAME : `${route.title} — ${SITE_NAME}`;
 
@@ -59,7 +64,7 @@ export function renderDocument({ route, nav, stylesheetHref, build = 'unknown' }
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="${stylesheetHref}">
 </head>
-<body>
+<body data-layer="${route.layer}" data-mode="${route.mode}">
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="shell">
     <header class="site">

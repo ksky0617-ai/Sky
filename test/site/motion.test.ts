@@ -31,6 +31,7 @@ import {
   stylesheet,
 } from '../../src/site/styles.ts';
 import { SECURITY_HEADERS } from '../../src/http/router.ts';
+import { buildRoutes } from '../../src/site/routes.ts';
 
 // --- the real stylesheet -------------------------------------------------
 
@@ -63,7 +64,11 @@ test('every reveal is gated on support AND on the reader not asking for less mot
   // §6 and §8. Either guard alone is insufficient: without @supports the
   // animation runs on a timer where the timeline is unavailable, and without
   // the media query it runs for a reader who asked for stillness.
-  const reveals = declarations(stylesheet).filter((d) => d.property === 'animation-name');
+  // `animation-name: none` is a removal, not a reveal — 02 §3's frictionless
+  // kill-switch. Requiring it to be support-gated would make disabling motion
+  // conditional on motion being supported.
+  const reveals = declarations(stylesheet)
+    .filter((d) => d.property === 'animation-name' && !d.value.includes('none'));
   assert.ok(reveals.length > 0, 'no motion is declared at all');
 
   for (const reveal of reveals) {
@@ -318,4 +323,74 @@ test('the dark state is ACTIVATED, not merely defined', () => {
   // §4's own sketch: an explicit choice of daylight must win over the
   // preference, which is what makes constraint 4's override possible later.
   assert.match(stylesheet, /:root:not\(\[data-light="daylight"\]\)/);
+});
+
+// --- the descending motion budget ---------------------------------------
+//
+// 02_BRAND_EXPERIENCE_SYSTEM.md §3: "the motion system reads the active route's
+// mode. On Frictionless routes the brand motion layer is disabled at the
+// provider level, not per-component. It cannot be re-enabled by an individual
+// component." §8: "Motion budget provably decreases from Layer 1 to Layer 3."
+//
+// Neither held. No route carried a layer, so the motion system had nothing to
+// read, and every page from the home portal to the purchase form carried the
+// same rules. The browser check measured Layer 3 running TEN animations against
+// Layer 1's nine — the budget rose toward the purchase.
+
+test('every route declares its layer and mode', () => {
+  for (const route of buildRoutes()) {
+    assert.ok([1, 2, 3].includes(route.layer), `${route.path} has no layer`);
+    assert.ok(
+      ['immersive', 'informative', 'frictionless', 'reassuring'].includes(route.mode),
+      `${route.path} has no mode`,
+    );
+  }
+});
+
+test('layers match §3: commerce is Layer 3, the world is Layer 1', () => {
+  const byPath = new Map(buildRoutes().map((r) => [r.path, r]));
+  // §3 Layer 1 — WORLD: Home, Nature, Philosophy.
+  for (const path of ['/', '/nature', '/nature/river', '/olibana/philosophy']) {
+    assert.equal(byPath.get(path)?.layer, 1, `${path} is not Layer 1`);
+  }
+  // §3 Layer 2 — DESIGN.
+  assert.equal(byPath.get('/olibana/design-language')?.layer, 2);
+});
+
+test('every motion rule is scoped to a layer, so none applies site-wide', () => {
+  // Without this a new rule added without a layer prefix silently reinstates a
+  // flat budget, and the browser measurement would only catch it if that rule
+  // happened to tip a maximum.
+  const reveals = declarations(stylesheet)
+    .filter((d) => d.property === 'animation-name' && !d.value.includes('none'));
+  for (const reveal of reveals) {
+    for (const selector of reveal.selector.split(',').map((s) => s.trim())) {
+      assert.match(
+        selector, /\[data-layer="[123]"\]/,
+        `"${selector}" carries motion on every layer, so the budget cannot descend`,
+      );
+    }
+  }
+});
+
+test('the frictionless mode is disabled at provider level, not per component', () => {
+  // §3's wording is precise: "It cannot be re-enabled by an individual
+  // component." A rule keyed on the mode with !important is what makes that
+  // true — a component cannot out-specify it.
+  const kill = declarations(stylesheet).filter(
+    (d) => d.selector.includes('[data-mode="frictionless"]') && d.property === 'animation-name',
+  );
+  assert.ok(kill.length > 0, 'nothing disables motion on frictionless routes');
+  assert.ok(kill.every((d) => d.value.includes('!important')), 'a component could re-enable it');
+});
+
+test('a Layer 1 statement stays within the silence budget', () => {
+  // §5: "Words in a Layer 1 statement block ≤ 25". Long-form belongs in Layer 2.
+  const home = buildRoutes().find((r) => r.path === '/');
+  const statements = [...(home?.body ?? '').matchAll(/<p class="statement">(.*?)<\/p>/gs)];
+  assert.ok(statements.length > 0, 'the home portal has no statement block');
+  for (const [, text] of statements) {
+    const words = (text as string).replace(/<[^>]*>/g, ' ').trim().split(/\s+/).length;
+    assert.ok(words <= 25, `a Layer 1 statement runs to ${words} words, over the 25-word budget`);
+  }
 });

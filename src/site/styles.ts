@@ -429,7 +429,8 @@ footer.site a { color: var(--content-secondary); display: inline-block; padding:
        §8 makes the first painted frame static and non-negotiable, and the lede
        is the top-of-page content and the likely LCP element. Nothing above the
        fold moves. */
-    main > h2 {
+    [data-layer="1"] main > h2,
+    [data-layer="2"] main > h2 {
       /* Scaling from the centre moves a full-width block's left edge inward,
          so a heading drifts off the text column while it settles and lands
          back on it. A full-page screenshot caught it mid-flight. The left edge
@@ -446,10 +447,16 @@ footer.site a { color: var(--content-secondary); display: inline-block; padding:
 
     /* §9 list and grid entry: forest. The stagger is the vertical offset
        between siblings, not a delay. */
-    .index li,
-    dl.facts > dt,
-    dl.facts > dd,
-    .state {
+    [data-layer="1"] .index li,
+    [data-layer="2"] .index li,
+    /* Layer 3 reveals the detail list as ONE block, not one animation per row.
+       04 §9 gives Product "forest (detail reveal) only — Minimal"; per-row it
+       measured 10 concurrent animations against Layer 1's 9, so the budget rose
+       toward the purchase instead of falling. A measurements table with more
+       rows would have raised it further. */
+    [data-layer="3"] dl.facts,
+    [data-layer="1"] .state,
+    [data-layer="2"] .state {
       animation-name: forest-enter;
       animation-fill-mode: both;
       animation-duration: var(--motion-forest-duration);
@@ -461,7 +468,8 @@ footer.site a { color: var(--content-secondary); display: inline-block; padding:
     /* §9 river, scroll-linked. A rule is a section division; drawing it with
        the scroll makes the division felt rather than announced. transform-origin
        left so it draws in the reading direction. */
-    hr {
+    [data-layer="1"] hr,
+    [data-layer="2"] hr {
       transform-origin: left center;
       animation-name: river-draw;
       animation-fill-mode: both;
@@ -474,7 +482,7 @@ footer.site a { color: var(--content-secondary); display: inline-block; padding:
     /* §3.5 wind — hero micro-movement only. Time-based by definition (it is a
        loop, not a reveal), which is safe because it animates a resting element
        that is already visible: the keyframes start and end at translateY(0). */
-    main > .statement {
+    [data-layer="1"] main > .statement {
       animation-name: stone-enter, wind-drift;
       animation-fill-mode: both, none;
       animation-duration: var(--motion-stone-duration), var(--motion-wind-duration);
@@ -484,6 +492,40 @@ footer.site a { color: var(--content-secondary); display: inline-block; padding:
       animation-iteration-count: 1, infinite;
     }
   }
+}
+
+/* ---------------------------------------------------------------------------
+   The descending motion budget — 02_BRAND_EXPERIENCE_SYSTEM.md §3
+
+   "Brand experience must never obstruct the user, and the purchase experience
+   must never destroy the brand experience", implemented as a budget that falls
+   as the visitor approaches a purchase. §3 calls this the persona rather than a
+   compromise: a confident brand stops performing once the visitor has decided
+   to buy.
+
+   Every rule above is scoped to the layers §3 permits it on, so the budget is a
+   property of the selectors rather than a convention someone maintains:
+
+     Layer 1  WORLD      stone on headings · forest on lists · river on rules ·
+                         wind on the statement                        — full
+     Layer 2  DESIGN     stone · forest · river, no wind          — moderate
+     Layer 3  COMMERCE   forest on the product's own detail list only — minimal
+
+   §3's Frictionless mode is "effectively zero", and the checkout, sandbox and
+   confirmation pages reach it structurally: the router renders them with their
+   own inline styles and never links this file, so there is no rule to disable.
+   The declaration below is the belt to that braces — if those pages ever adopt
+   the site shell, the budget is already enforced rather than newly forgotten.
+
+   The reveal rules DO NOT cascade down: a Layer 3 page carries fewer selectors,
+   not the same selectors with smaller values. "scripts/visual-check.mjs" counts
+   the animations actually running per route and fails unless the count is
+   non-increasing from Layer 1 to Layer 3 — which is what §8's "motion budget
+   provably decreases" asks for, made literal. */
+[data-mode="frictionless"] *,
+[data-mode="frictionless"] *::before,
+[data-mode="frictionless"] *::after {
+  animation-name: none !important;
 }
 
 /* §6 — reduced motion removes movement without removing information. Nothing
@@ -594,7 +636,16 @@ export interface CssDeclaration {
  * trusted.
  */
 export function declarations(css: string): CssDeclaration[] {
-  const source = css.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/"[^"]*"|'[^']*'/g, '""');
+  // Comments are removed outright. Strings are NOT: only the three characters
+  // that drive this parser are masked inside them, so a brace in a string
+  // cannot shift the block stack while `[data-layer="1"]` keeps its value.
+  // Blanking whole strings — the first version — turned every attribute
+  // selector into `[data-layer=""]`, which silently collapsed four
+  // layer-scoped rules into one indistinguishable selector. A parser that
+  // destroys the thing being checked reports agreement it has not verified.
+  const source = css
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/"[^"]*"|'[^']*'/g, (text) => text.replace(/[{};]/g, '_'));
   const found: CssDeclaration[] = [];
   const stack: string[] = [];
   let buffer = '';
@@ -669,7 +720,13 @@ export function findLoadBearingMotion(css: string): string[] {
       continue;
     }
     if (property === 'animation-name' && !guarded(atRules)) {
-      offences.push(`${selector}: animation-name "${value}" is not inside @supports (animation-timeline)`);
+      // `none` REMOVES motion. Requiring the support guard on it would demand
+      // that a rule which disables animation be conditional on animation being
+      // supported, which inverts the rule it enforces — and 02 §3's
+      // frictionless kill-switch is exactly such a rule.
+      if (value.replace(/!important/, '').trim() !== 'none') {
+        offences.push(`${selector}: animation-name "${value}" is not inside @supports (animation-timeline)`);
+      }
       continue;
     }
     if (inKeyframes(atRules)) {

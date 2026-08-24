@@ -141,6 +141,7 @@ const browser = await chromium.launch({
 
 const errors = [];
 const motionSeen = new Map();
+const layerMotion = new Map();
 // Every viewport in BOTH light states. The dusk palette had been defined since
 // the stylesheet was written and never once rendered, because nothing activated
 // it — so its contrast was unknown rather than acceptable. 05_VISUAL_SYSTEM.md
@@ -422,6 +423,7 @@ for (const [name, path] of routes) {
           name: a.animationName ?? 'unnamed',
           timeline: a.timeline?.constructor?.name ?? 'none',
         })));
+        const layer = await probe.evaluate(() => document.body.dataset.layer ?? '');
         await probe.close();
 
         if (expectation === 'none' && running.length > 0) {
@@ -430,6 +432,7 @@ for (const [name, path] of routes) {
         }
         if (expectation === 'some') {
           motionSeen.set(name, running);
+          layerMotion.set(name, { layer: Number(layer), count: running.length });
           // A time-based timeline on a reveal is the old defect returning: it
           // means the rule lost its `animation-timeline` and now runs on a
           // clock, which no static check on the source would notice.
@@ -453,6 +456,37 @@ rmSync(work, { recursive: true, force: true });
 const homeMotion = motionSeen.get('home') ?? [];
 if (homeMotion.length === 0) errors.push('home: no motion runs at all — the motion language is not in effect');
 console.log(`\nmotion observed on home: ${homeMotion.map((a) => a.name).join(', ') || 'none'}`);
+
+/* 02_BRAND_EXPERIENCE_SYSTEM.md §8: "Motion budget provably decreases from
+   Layer 1 to Layer 3." PROVABLY is the word that matters — a comment in a
+   stylesheet saying the budget descends is not a proof of anything, and until
+   this ran, every page from the home portal to the purchase form carried
+   identical motion while the specification said otherwise.
+
+   So the budget is read back off the running animations, grouped by the layer
+   the page declares, and required to be non-increasing. Counted per route and
+   reported as a maximum per layer, because two routes in a layer can honestly
+   differ (a page with no list has no list reveal) — what may not happen is a
+   deeper layer moving more than a shallower one. */
+const byLayer = new Map();
+for (const [route, { layer, count }] of layerMotion) {
+  const seen = byLayer.get(layer) ?? { max: 0, routes: [] };
+  seen.routes.push(`${route}=${count}`);
+  byLayer.set(layer, { max: Math.max(seen.max, count), routes: seen.routes });
+}
+const layers = [...byLayer.keys()].sort((a, b) => a - b);
+console.log(`motion budget by layer: ${layers.map((l) => `L${l} max=${byLayer.get(l).max} (${byLayer.get(l).routes.join(' ')})`).join('  ')}`);
+for (let i = 1; i < layers.length; i += 1) {
+  const shallower = byLayer.get(layers[i - 1]).max;
+  const deeper = byLayer.get(layers[i]).max;
+  if (deeper > shallower) {
+    errors.push(
+      `motion budget does not descend: layer ${layers[i]} runs ${deeper} animation(s) against ` +
+      `layer ${layers[i - 1]}'s ${shallower} — 02 §3 requires the interface to quieten toward purchase`,
+    );
+  }
+}
+if (layers.length < 2) errors.push('only one layer was measured, so a descending budget is UNVERIFIED');
 
 console.log(errors.length > 0
   ? `\nERRORS:\n${errors.join('\n')}`

@@ -116,7 +116,17 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   'x-content-type-options': 'nosniff',
 };
 
-function page(status: number, title: string, body: string): Response {
+/**
+ * A router-rendered page.
+ *
+ * `mode` places it in 02_BRAND_EXPERIENCE_SYSTEM.md §3's table. These pages
+ * carry no brand motion — they do not link the site stylesheet — but they were
+ * also declaring no layer at all, which meant the descending-budget measurement
+ * bucketed them outside the scale and could not tell "zero motion because the
+ * budget says so" from "zero motion because nobody looked". Declaring it makes
+ * the frictionless rule observable rather than incidental.
+ */
+function page(status: number, title: string, body: string, mode: 'frictionless' | 'reassuring' = 'frictionless'): Response {
   // Deliberately plain and self-contained: this is what a customer sees when
   // something went wrong, and it must not depend on the build having run.
   const html = `<!doctype html>
@@ -154,7 +164,7 @@ function page(status: number, title: string, body: string): Response {
     color: Canvas; background: CanvasText; border: 1px solid CanvasText;
   }
 </style>
-</head><body><main><h1>${escapeHtml(title)}</h1>${body}<p><a href="/">Return to Olibana</a></p></main></body></html>`;
+</head><body data-layer="3" data-mode="${mode}"><main><h1>${escapeHtml(title)}</h1>${body}<p><a href="/">Return to Olibana</a></p></main></body></html>`;
   return new Response(html, {
     status,
     headers: { ...SECURITY_HEADERS, 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
@@ -282,6 +292,7 @@ function confirmation(order: OrderPlacement | null): Response {
       'Payment received',
       '<p>Your payment has gone through. The order confirmation is still being recorded — ' +
         'it will arrive by email shortly. Nothing further is needed from you.</p>',
+      'reassuring',
     );
   }
 
@@ -301,6 +312,7 @@ function confirmation(order: OrderPlacement | null): Response {
 <p><strong>Total paid:</strong> ${escapeHtml(formatPrice(order.totalAmount, order.currency))}</p>
 <p><strong>Dispatched by:</strong> ${escapeHtml(new Date(order.promisedShipBy).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }))}</p>
 <p>If this run does not reach its minimum, every order is refunded in full.</p>`,
+    'reassuring',
   );
 }
 
