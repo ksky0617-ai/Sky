@@ -37,6 +37,50 @@ export interface BuildResult {
 
 export class ProductionGuardError extends Error {}
 
+/** A link on a built page that points at an address the build did not emit. */
+export class DeadLinkError extends Error {}
+
+/**
+ * Every internal link on every built page that resolves to nothing.
+ *
+ * Two shipped before this existed. The source documents link to each other the
+ * way files in a repository do — `[Light_Atlas.md](./Light_Atlas.md)` — and
+ * that address survived into the published HTML, where no `.md` file is served
+ * at any address. Both pages were live and both links were 404s.
+ *
+ * Nothing caught it: the unit suite renders markdown and checks the anchor
+ * exists, which it did; the deployment auditor follows navigation links, and
+ * these were in body copy. It took pointing a browser at a route the visual
+ * check had not covered. So the check now runs at build time, over the actual
+ * emitted HTML, where an unreachable address cannot hide behind an assertion
+ * that the link was rendered.
+ *
+ * External links (`http:`, `mailto:`) are out of scope — a build cannot verify
+ * another origin, and pretending to would be the kind of claim this project
+ * refuses to make. Fragments and query strings are stripped before matching:
+ * `/nature#top` reaches `/nature`.
+ */
+export function findDeadLinks(pages: ReadonlyMap<string, string>, addresses: ReadonlySet<string>): string[] {
+  const dead: string[] = [];
+  for (const [page, html] of pages) {
+    for (const [, href] of html.matchAll(/href="([^"]*)"/g)) {
+      if (href === '' || /^(https?:|mailto:|tel:|data:|#)/.test(href)) continue;
+      if (!href.startsWith('/')) {
+        // A relative address on a static site depends on the directory the page
+        // happens to sit in, which is exactly how the two dead links stayed
+        // plausible. Site-absolute or nothing.
+        dead.push(`${page}: "${href}" is relative, so where it lands depends on the page's directory`);
+        continue;
+      }
+      const target = href.split('#')[0]?.split('?')[0] ?? '';
+      if (target !== '' && !addresses.has(target) && !addresses.has(target.replace(/\/$/, ''))) {
+        dead.push(`${page}: "${href}" is not an address this build emits`);
+      }
+    }
+  }
+  return dead;
+}
+
 export function build({ outDir, production = false, origin = '', catalogPath, runsPath }: BuildOptions): BuildResult {
   if (production) {
     const leaked = findConstructionTokens(stylesheet);
@@ -77,15 +121,34 @@ export function build({ outDir, production = false, origin = '', catalogPath, ru
     }
   });
 
+  const pages = new Map<string, string>();
   emit('styles.css', stylesheet);
   for (const route of routes) {
-    emit(route.file, renderDocument({ route, nav, stylesheetHref: '/styles.css', build }));
+    const html = renderDocument({ route, nav, stylesheetHref: '/styles.css', build });
+    pages.set(route.path, html);
+    emit(route.file, html);
   }
   emit('sitemap.xml', renderSitemap(routes, origin));
   emit('robots.txt', renderRobots(origin));
   // Same headers the router sets in code, so a request is protected the same
   // way whichever half of the system answered it.
   emit('_headers', headersFile());
+
+  // Every address this build serves: the routes, plus the assets it just
+  // emitted. Checked after emission rather than before, so what is verified is
+  // the HTML that will actually be served.
+  const addresses = new Set<string>([
+    ...routes.map((r) => r.path),
+    '/styles.css', '/sitemap.xml', '/robots.txt', '/favicon.ico',
+  ]);
+  const dead = findDeadLinks(pages, addresses);
+  if (dead.length > 0) {
+    throw new DeadLinkError(
+      `the build emits ${dead.length} link(s) that lead nowhere:\n  ${dead.join('\n  ')}\n\n` +
+        'A source document linking to another document by file name is correct in the ' +
+        'repository and a 404 on the site. Map it in routes.ts, or let it render unlinked.',
+    );
+  }
 
   return { files: written, routes: routes.map((r) => r.path), bytes };
 }
@@ -106,6 +169,10 @@ if (invokedDirectly) {
   } catch (error) {
     if (error instanceof ProductionGuardError) {
       process.stderr.write(`\nPRODUCTION BUILD REFUSED\n\n${error.message}\n\n`);
+      process.exit(1);
+    }
+    if (error instanceof DeadLinkError) {
+      process.stderr.write(`\nBUILD REFUSED — BROKEN LINKS\n\n${error.message}\n\n`);
       process.exit(1);
     }
     throw error;

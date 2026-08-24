@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { extractSection, renderMarkdown } from './markdown.ts';
+import { extractSection, renderMarkdown, type DocumentRoutes } from './markdown.ts';
 import { renderProductBody } from './product-page.ts';
 import { Catalog, type ProductRevision } from '../catalog/catalog.ts';
 import { PreorderRunStore, preorderWindow, type PreorderWindow } from '../preorder/run.ts';
@@ -42,12 +42,25 @@ export interface Route {
 const ROOT = resolve(import.meta.dirname, '../..');
 const doc = (relativePath: string): string => readFileSync(resolve(ROOT, relativePath), 'utf8');
 
+/**
+ * Source documents that have a page, so a link between documents can become a
+ * link between pages. Derived from ATLASES below rather than listed twice.
+ *
+ * A document absent from this map is rendered as an unlinked reference. That
+ * is deliberate: the built site contains no `.md` file at any address, so a
+ * `[Design_System.md](./Design_System.md)` carried straight through is a 404
+ * on a published page. Two of them shipped.
+ */
+function documentRoutes(): DocumentRoutes {
+  return Object.fromEntries(ATLASES.map((atlas) => [atlas.file, `/nature/${atlas.slug}`]));
+}
+
 function section(relativePath: string, heading: string): string {
   const body = extractSection(doc(relativePath), heading);
   if (body === null) {
     throw new Error(`section "${heading}" not found in ${relativePath} — the document changed`);
   }
-  return renderMarkdown(body);
+  return renderMarkdown(body, documentRoutes());
 }
 
 /**
@@ -98,7 +111,7 @@ function atlasPage(atlas: AtlasSpec): Route {
   // Measurements appear only when measurements exist.
   parts.push(
     rows > 0
-      ? `<h2>Measurements</h2>${renderMarkdown(extractSection(source, 'Data Log') ?? '')}`
+      ? `<h2>Measurements</h2>${renderMarkdown(extractSection(source, 'Data Log') ?? '', documentRoutes())}`
       : `<div class="state"><p>No field measurements have been recorded for this Atlas yet. ` +
         `The method above is the work; the readings follow it.</p></div>`,
   );
@@ -223,7 +236,8 @@ function accessibilityPage(): Route {
   const body = `
 <h1>Accessibility</h1>
 <div class="lede">
-<p>This site is built to work without JavaScript, without animation, and with a keyboard alone.</p>
+<p>This site is built to work without JavaScript, with a keyboard alone, and with every
+word readable whether or not any motion runs.</p>
 </div>
 <h2>What is implemented</h2>
 <ul>

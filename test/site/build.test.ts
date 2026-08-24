@@ -7,7 +7,13 @@ import { resolve } from 'node:path';
 import { ProductionGuardError, build } from '../../src/site/build.ts';
 import { buildRoutes, countAtlasDataRows, navigation } from '../../src/site/routes.ts';
 import { escapeHtml, extractSection, renderMarkdown } from '../../src/site/markdown.ts';
-import { findConstructionTokens, findUndefinedTokens, stylesheet } from '../../src/site/styles.ts';
+import {
+  declarations,
+  findConstructionTokens,
+  findLoadBearingMotion,
+  findUndefinedTokens,
+  stylesheet,
+} from '../../src/site/styles.ts';
 import { SECURITY_HEADERS } from '../../src/http/router.ts';
 import { FileStorage } from '../../src/persistence/file-storage.ts';
 
@@ -149,7 +155,7 @@ test('the sitemap lists indexable pages only, and 404 is marked noindex', () => 
   assert.match(html('404.html'), /<meta name="robots" content="noindex">/);
 });
 
-test('reduced motion is honoured, and no content is animated at all', () => {
+test('reduced motion is honoured, and motion never hides content', () => {
   const css = readFileSync(resolve(outDir, 'styles.css'), 'utf8');
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 
@@ -158,10 +164,31 @@ test('reduced motion is honoured, and no content is animated at all', () => {
   // concluded the page was safe; a browser screenshot showed it blank, because
   // `both` holds an element at its FROM state through its delay.
   //
-  // The property that actually matters: nothing inside main animates opacity.
-  assert.ok(!/@keyframes\s+forest-enter/.test(css), 'content entry animation must not return');
+  // This test then banned the animation BY NAME — `@keyframes forest-enter`
+  // must not exist. That is a proxy for the safety property, not the property:
+  // it forbids one spelling of the defect and permits every other, while also
+  // forbidding motion that hides nothing. The motion language (§3) requires
+  // forest-enter to exist; what it forbids is content revealed only by
+  // animation (§10).
+  //
+  // So the assertions here are now the property itself, checked structurally by
+  // findLoadBearingMotion and measured in a real browser by
+  // scripts/visual-check.mjs, which reads the computed opacity of every element
+  // carrying text at rest — the only check that can see an inactive timeline.
+  assert.deepEqual(findLoadBearingMotion(css), [], 'the built stylesheet stages content behind motion');
   assert.ok(!/opacity:\s*0/.test(css), 'no rule may start content at opacity 0');
   assert.ok(!/\.enter/.test(css), 'the staggered entry class must not return');
+
+  // The delay is what stranded content. With a view() timeline the stagger is
+  // positional, so there is no delay to get wrong.
+  //
+  // Read through the parser rather than with a regex over the text: the
+  // stylesheet's own comments explain the defect by name, and a raw
+  // /animation-delay/ matched the explanation. That is the third time in this
+  // repository a checker has been fooled by prose describing the thing it
+  // looks for — findUndefinedTokens strips comments for exactly this reason.
+  const delays = declarations(css).filter((d) => d.property === 'animation-delay');
+  assert.deepEqual(delays, [], 'animation-delay reintroduces the stranding failure');
 
   for (const page of pages) {
     assert.ok(!/class="enter"/.test(html(page)), `${page} still stages content behind animation`);

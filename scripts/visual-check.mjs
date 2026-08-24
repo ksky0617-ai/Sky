@@ -140,6 +140,7 @@ const browser = await chromium.launch({
 });
 
 const errors = [];
+const motionSeen = new Map();
 const viewports = [['desktop', 1280, 900], ['tablet', 834, 1112], ['mobile', 390, 844]];
 // A checkout is run first so the sandbox and confirmation pages have something
 // real to show. These are states, not fixtures: the same code path a customer
@@ -165,6 +166,14 @@ const routes = [
   ['product', '/products/olb-ct-001'],
   ['shop', '/shop'],
   ['home', '/'],
+  // The Atlas index and a philosophy page carry the list and section motion,
+  // so they are where a reveal would strand content if one did.
+  ['nature', '/nature'],
+  ['philosophy', '/olibana/philosophy'],
+  // Deliberately short. A page that cannot scroll leaves every scroll-driven
+  // timeline INACTIVE, which is the state a static check cannot reason about
+  // and the one most likely to hold an element at its first keyframe.
+  ['notfound', '/does-not-exist'],
   ['confirmation', `/order/confirmation?ref=${reference}`],
   ['sandbox', `/sandbox/pay?ref=${reference}`],
 ];
@@ -174,7 +183,13 @@ for (const [name, path] of routes) {
     const page = await browser.newPage({ viewport: { width, height } });
     const id = `${name}/${size}`;
     page.on('pageerror', (e) => errors.push(`${id}: ${e.message}`));
-    page.on('response', (r) => { if (r.status() >= 400) errors.push(`${id}: ${r.status()} ${r.url()}`); });
+    // The 404 document is REQUESTED with an address that does not exist, so its
+    // own 404 is the correct answer and not a defect. Anything else it pulls in
+    // still has to succeed.
+    page.on('response', (r) => {
+      const expected404 = name === 'notfound' && new URL(r.url()).pathname === path;
+      if (r.status() >= 400 && !expected404) errors.push(`${id}: ${r.status()} ${r.url()}`);
+    });
     await page.goto(`http://127.0.0.1:${port}${path}`, { waitUntil: 'load' });
 
     const m = await page.evaluate((minTarget) => {
@@ -190,13 +205,62 @@ for (const [name, path] of routes) {
         return (x + 0.05) / (y + 0.05);
       };
       const main = document.querySelector('main');
+      // SC 2.5.8 has an explicit Inline exception: "the target is in a
+      // sentence, or its size is otherwise constrained by the line-height of
+      // non-target text". A link inside a paragraph of prose cannot be given a
+      // 24px hit area without breaking the line it sits in, and the success
+      // criterion says so. Applying the floor to it reported a conformance
+      // failure that is not one — which is worse than missing a real failure,
+      // because the fix would have damaged the typography to satisfy a rule
+      // that never applied.
+      const inSentence = (el) => {
+        const parent = el.parentElement;
+        if (parent === null) return false;
+        if (!['P', 'LI', 'TD', 'BLOCKQUOTE', 'DD', 'FIGCAPTION'].includes(parent.tagName)) return false;
+        // Only when there is other text around it. A paragraph containing
+        // nothing but the link is a block target, and the exception is spent.
+        const own = (el.textContent || '').trim();
+        const surrounding = (parent.textContent || '').trim();
+        return surrounding.length > own.length;
+      };
+
       const small = [...document.querySelectorAll('a, button, select, input[type="number"], input[type="email"]')]
+        .filter((el) => !inSentence(el))
         .map((el) => ({ el, r: el.getBoundingClientRect() }))
         .filter((x) => x.r.height > 0 && x.r.height < minTarget)
         .map((x) => `${x.el.tagName.toLowerCase()}"${(x.el.innerText || '').trim().slice(0, 18)}"@${Math.round(x.r.height)}px`);
 
       const button = document.querySelector('form.order button');
       return {
+        // Every element carrying text, not just main's direct children.
+        //
+        // This is the check a static analyser cannot make. The motion system is
+        // scroll-driven: if a `view()` timeline is INACTIVE — a page too short
+        // to scroll, a container with no overflow — the browser decides what an
+        // animation with `fill-mode: both` renders, and the answer is not
+        // something the CSS says out loud. The specification's own promise is
+        // "unsupported -> static final state, site fully functional", and the
+        // only way to know whether that holds is to ask a browser what it
+        // painted. An earlier build failed exactly here and only a screenshot
+        // caught it.
+        //
+        // Measured at rest, with no scrolling performed, because that is the
+        // state a reader arrives in.
+        invisible: [...main.querySelectorAll('*')]
+          .filter((el) => (el.textContent || '').trim().length > 0)
+          .filter((el) => el.getClientRects().length > 0)
+          .filter((el) => {
+            const style = getComputedStyle(el);
+            return Number(style.opacity) < 0.99 || style.visibility === 'hidden';
+          })
+          .map((el) => `${el.tagName.toLowerCase()}${el.className ? '.' + String(el.className).split(' ')[0] : ''}` +
+                       `@opacity=${getComputedStyle(el).opacity}`)
+          .slice(0, 8),
+        // Whether this page can scroll at all. A page that cannot is the case
+        // that puts a scroll-driven timeline into its inactive state, so the
+        // run says which pages actually exercised it rather than assuming all
+        // of them did.
+        scrollable: document.documentElement.scrollHeight > document.documentElement.clientHeight,
         textLen: (main.innerText || '').trim().length,
         overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         hidden: [...main.children].filter((el) => getComputedStyle(el).opacity === '0').length,
@@ -250,11 +314,17 @@ for (const [name, path] of routes) {
     console.log(
       `${id.padEnd(17)} text=${String(m.textLen).padStart(5)} overflow=${m.overflow} ` +
       `LCP=${String(perf.lcp).padStart(4)}ms CLS=${perf.cls} ${(perf.bytes / 1024).toFixed(1).padStart(5)}KB ` +
-      `js=${perf.scripts} button=${btn} small=${m.small.join(', ') || 'none'}`,
+      `js=${perf.scripts} scroll=${m.scrollable ? 'yes' : 'NO'} ` +
+      `button=${btn} small=${m.small.join(', ') || 'none'}`,
     );
 
     if (m.overflow) errors.push(`${id}: the page scrolls horizontally`);
     if (m.hidden > 0) errors.push(`${id}: ${m.hidden} top-level children at opacity 0`);
+    if (m.invisible.length > 0) {
+      // Motion has become load-bearing: a reader who does not scroll cannot
+      // read this. 04_MOTION_LANGUAGE.md §7 Q6 rejects it outright.
+      errors.push(`${id}: ${m.invisible.length} element(s) with text are not fully painted at rest — ${m.invisible.join(', ')}`);
+    }
     if (m.textLen < 60) errors.push(`${id}: only ${m.textLen} visible characters`);
     if (m.small.length > 0) errors.push(`${id}: below the ${MIN_TARGET_PX}px AA target minimum — ${m.small.join(', ')}`);
     if (name === 'product') {
@@ -269,12 +339,53 @@ for (const [name, path] of routes) {
 
     await page.screenshot({ path: resolve(shotDir, `${name}-${size}.png`), fullPage: true });
     await page.close();
+
+    // Does the motion actually RUN, and does it actually stop?
+    //
+    // Every check above answers "does the page still work". None of them
+    // answers "is the specified motion present" — a stylesheet whose rules all
+    // silently fail to match would pass each one of them, and the site would
+    // be exactly the static page the motion language was written to replace.
+    // Measured once per route, at the widest viewport.
+    if (size === 'desktop') {
+      for (const [preference, expectation] of [['no-preference', 'some'], ['reduce', 'none']]) {
+        const probe = await browser.newPage({ viewport: { width, height }, reducedMotion: preference });
+        await probe.goto(`http://127.0.0.1:${port}${path}`, { waitUntil: 'load' });
+        const running = await probe.evaluate(() => document.getAnimations().map((a) => ({
+          name: a.animationName ?? 'unnamed',
+          timeline: a.timeline?.constructor?.name ?? 'none',
+        })));
+        await probe.close();
+
+        if (expectation === 'none' && running.length > 0) {
+          // 04_MOTION_LANGUAGE.md §6. A reader who asked for stillness got motion.
+          errors.push(`${id}: ${running.length} animation(s) still run under prefers-reduced-motion: reduce`);
+        }
+        if (expectation === 'some') {
+          motionSeen.set(name, running);
+          // A time-based timeline on a reveal is the old defect returning: it
+          // means the rule lost its `animation-timeline` and now runs on a
+          // clock, which no static check on the source would notice.
+          for (const animation of running) {
+            if (animation.name !== 'wind-drift' && animation.timeline !== 'ViewTimeline') {
+              errors.push(`${id}: ${animation.name} runs on ${animation.timeline}, not a scroll timeline`);
+            }
+          }
+        }
+      }
+    }
   }
 }
 
 await browser.close();
 server.close();
 rmSync(work, { recursive: true, force: true });
+
+// The motion language is only implemented if it is observably running. A route
+// where nothing animates is reported, not assumed to be intentional.
+const homeMotion = motionSeen.get('home') ?? [];
+if (homeMotion.length === 0) errors.push('home: no motion runs at all — the motion language is not in effect');
+console.log(`\nmotion observed on home: ${homeMotion.map((a) => a.name).join(', ') || 'none'}`);
 
 console.log(errors.length > 0
   ? `\nERRORS:\n${errors.join('\n')}`

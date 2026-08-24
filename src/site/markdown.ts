@@ -21,15 +21,42 @@ export function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Where a source document is published on the site, keyed by file name.
+ *
+ * The Olibana documents link to each other the way files in a repository do —
+ * `[Light_Atlas.md](./Light_Atlas.md)`. That address is correct where the
+ * document lives and meaningless once the document is a web page: the built
+ * site has no `.md` files at any address, so every such link was a 404 on a
+ * published page. Two of them shipped, and nothing noticed until a browser
+ * was pointed at a route the visual check had not covered.
+ */
+export type DocumentRoutes = Readonly<Record<string, string>>;
+
+/**
+ * Rewrites a repository-relative link for the web, or removes it.
+ *
+ * A document that HAS a page becomes a link to that page. A document that does
+ * not is rendered as its label alone, with no anchor: an unlinked reference to
+ * a document is honest, and a link to a page that does not exist is not. This
+ * is the same principle the rest of the system applies to unknown values —
+ * saying less rather than inventing a target.
+ */
+function documentLink(label: string, href: string, routes: DocumentRoutes): string {
+  const file = href.replace(/^.*\//, '');
+  const route = routes[file];
+  return route === undefined ? label : `<a href="${route}">${label}</a>`;
+}
+
 /** Inline formatting. Input must already be escaped. */
-function inline(text: string): string {
+function inline(text: string, routes: DocumentRoutes): string {
   return text
     // code first: its contents must not be reinterpreted
     .replace(/`([^`]+)`/g, (_m, code: string) => `<code>${code}</code>`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label: string, href: string) =>
-      `<a href="${href}">${label}</a>`);
+      href.endsWith('.md') ? documentLink(label, href, routes) : `<a href="${href}">${label}</a>`);
 }
 
 const HEADING = /^(#{1,6})\s+(.*)$/;
@@ -52,14 +79,14 @@ function tableRow(line: string): string[] {
   return line.split('|').slice(1, -1).map((c) => c.trim());
 }
 
-export function renderMarkdown(source: string): string {
+export function renderMarkdown(source: string, routes: DocumentRoutes = {}): string {
   const lines = source.split('\n');
   const out: string[] = [];
   let i = 0;
 
   const flushParagraph = (buffer: string[]): void => {
     if (buffer.length === 0) return;
-    out.push(`<p>${inline(escapeHtml(buffer.join(' ')))}</p>`);
+    out.push(`<p>${inline(escapeHtml(buffer.join(' ')), routes)}</p>`);
     buffer.length = 0;
   };
 
@@ -99,7 +126,7 @@ export function renderMarkdown(source: string): string {
       flushParagraph(paragraph);
       const level = (heading[1] as string).length;
       const text = heading[2] as string;
-      out.push(`<h${level} id="${slug(text)}">${inline(escapeHtml(text))}</h${level}>`);
+      out.push(`<h${level} id="${slug(text)}">${inline(escapeHtml(text), routes)}</h${level}>`);
       i += 1;
       continue;
     }
@@ -114,9 +141,9 @@ export function renderMarkdown(source: string): string {
         body.push(tableRow(lines[i] as string));
         i += 1;
       }
-      const th = head.map((c) => `<th>${inline(escapeHtml(c))}</th>`).join('');
+      const th = head.map((c) => `<th>${inline(escapeHtml(c), routes)}</th>`).join('');
       const rows = body
-        .map((r) => `<tr>${r.map((c) => `<td>${inline(escapeHtml(c))}</td>`).join('')}</tr>`)
+        .map((r) => `<tr>${r.map((c) => `<td>${inline(escapeHtml(c), routes)}</td>`).join('')}</tr>`)
         .join('');
       // Wide tables scroll inside their own container rather than the page.
       out.push(`<div class="table-scroll"><table><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table></div>`);
@@ -130,7 +157,7 @@ export function renderMarkdown(source: string): string {
         quoted.push((QUOTE.exec(lines[i] as string) as RegExpExecArray)[1] as string);
         i += 1;
       }
-      out.push(`<blockquote>${renderMarkdown(quoted.join('\n'))}</blockquote>`);
+      out.push(`<blockquote>${renderMarkdown(quoted.join('\n'), routes)}</blockquote>`);
       continue;
     }
 
@@ -141,7 +168,7 @@ export function renderMarkdown(source: string): string {
       const items: string[] = [];
       while (i < lines.length && pattern.test(lines[i] as string)) {
         const m = pattern.exec(lines[i] as string) as RegExpExecArray;
-        items.push(`<li>${inline(escapeHtml(m[1] as string))}</li>`);
+        items.push(`<li>${inline(escapeHtml(m[1] as string), routes)}</li>`);
         i += 1;
       }
       const tag = ordered ? 'ol' : 'ul';
