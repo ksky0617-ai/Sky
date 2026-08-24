@@ -9,6 +9,27 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-24-021 · V0 + V1 + V3 + V4 · The light-state system, activated and validated per state
+
+| | |
+| --- | --- |
+| **Target** | `src/site/styles.ts`, `src/http/router.ts`, `scripts/visual-check.mjs`, `test/site/motion.test.ts` |
+| **Bottleneck selected** | Same shape as cycle 20, one layer along. `05_VISUAL_SYSTEM.md` §4 specifies a three-state illumination system; `:root[data-light="dawn"]` and `[data-light="dusk"]` were defined in the stylesheet — and **nothing in the repository ever set `data-light`**. No page, no build step, no script (there is none). Searched, not assumed. Every visitor got daylight, and two of the three states were unreachable code that had never been rendered, let alone contrast-checked. |
+| **Activation, from the specification rather than invented** | §4's own code sketch gives it: `@media (prefers-color-scheme: dark) { :root:not([data-light="daylight"]) { … } }`. That is the reader's stated preference. A time-of-day default was **rejected**: the server has no clock for the reader's timezone and the page cannot read one without JavaScript, so "dawn/daylight/dusk" is a description of the palettes, not a licence to invent the reader's local time. |
+| **Constraint 4 is NOT implemented, and says so** | "Manual override persists" needs somewhere to persist it, and the site ships no JavaScript. The `[data-light]` hooks are the seam; recorded in the stylesheet rather than quietly dropped. |
+| **Defect found — site-wide, in the state that has been live all along** | §4 constraint 3 says "All three states pass WCAG AA. Validated per state in CI." Nothing validated any state: the only contrast measurement in this project was the purchase button. Measuring every element that paints its own text found **`--content-tertiary` at 3.45:1 on the page ground — below WCAG 1.4.3 AA — in DAYLIGHT**, carrying the footer, every `.index-note` and every form hint, on every page, since the site was built. `--construct-500` is now `#767676` (4.54:1 measured). The `[data-light="dusk"]` state carried the same failure at 3.9:1 and now raises tertiary to `--construct-300`, matching the media block. |
+| **A false positive in my own checker, caught before it became a fix** | The first contrast pass reported `1:1` on `a`, `p`, `li`, `label` and `strong` — an apparent site-wide catastrophe. It was the checker: the router's own pages leave the ground colour to the browser, so walking up for a background found nothing opaque, and the fallback parsed transparent as black. **A guessed background is a guessed conformance claim.** The walk now returns null and the run reports those elements as `UNVERIFIABLE` rather than computing a ratio — "could not check" is not "fine", the same rule the deployment auditor follows. |
+| **And the underlying cause fixed rather than worked around** | Those router pages now declare `background: Canvas; color: CanvasText` instead of inheriting them. A colour nobody wrote down is precisely what produced the 1:1 purchase button, so leaving the ground implicit was a live instance of that class, not merely inconvenient for a checker. Contrast is now determinable from the page itself: zero UNVERIFIABLE across the run. |
+| **Browser evidence** | 8 routes × 3 viewports × **2 colour schemes = 48 renders**, up from 24. Dusk had never been rendered before this run. Exit 0: no contrast failure, no undetermined background, no overflow, no unpainted text, no undersized target. Motion still observed running on `ViewTimeline` in both schemes, and still 0 animations under reduced motion. |
+| **Unit-level equivalent, because a browser is not always present** | `contrastRatio` and `resolveRoles` compute the same property from the tokens, so §4 constraint 3's "validated per state in CI" holds in `npm test`. Four states × three text roles, plus the purchase button's inverted ground in each. Anchored by a control asserting the calculator on known pairs — 21:1, 1:1, and both the value that shipped and its replacement — so the check cannot pass by computing nonsense. |
+| **Mutation — one killed, one SURVIVED and was closed** | M1: restore `#8A8A8A` → caught in two states. **M2: delete the entire `prefers-color-scheme` block → all 25 tests still passed.** With no activation the dark state resolves to daylight, daylight passes AA, and the suite was satisfied by the feature not existing. That is this cycle's own premise recurring one level up, and it is exactly how dusk survived unrendered since the stylesheet was written. A test now asserts the dark state resolves to a *different* ground than daylight; M2 re-run is killed. |
+| **Observed** | 367/367 pass (from 363). Visual check exit 0 across 48 renders. |
+| **Result** | **PASS.** §4: constraints 1, 2 and 3 hold and are checked; constraint 4 is disclosed as not implemented, with the reason and the seam. |
+| **Standing limits** | The palette is still the **construction** palette — hueless, provisional, and refused by `--production` builds. `#767676` is a conformance floor, not a brand decision. Chromium only. Dawn is defined and, like dusk before this cycle, still has no trigger — it is reachable only by an explicit `data-light`, which nothing sets; that is now recorded rather than mistaken for working. |
+| **Commit** | written against `5e70626` |
+
+---
+
 ## V-2026-08-24-020 · V0 + V1 + V3 + V4 · The motion language, implemented and made unable to hide content
 
 | | |

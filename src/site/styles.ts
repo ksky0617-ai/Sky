@@ -28,7 +28,13 @@ export const stylesheet = `
   ${CONSTRUCTION_PREFIX}000: #FFFFFF;
   ${CONSTRUCTION_PREFIX}100: #F2F2F2;
   ${CONSTRUCTION_PREFIX}300: #C9C9C9;
-  ${CONSTRUCTION_PREFIX}500: #8A8A8A;
+  /* #8A8A8A until a browser measured it: 3.45:1 on 000, which is below WCAG
+     1.4.3 AA and was carrying the footer, every .index-note and every form
+     hint on every page since the site was built. Nothing looked, because the
+     only contrast measurement in this project was the purchase button.
+     #767676 is 4.54:1 on white — the darkest step that still reads as a third
+     level of hierarchy rather than collapsing into --content-secondary. */
+  ${CONSTRUCTION_PREFIX}500: #767676;
   ${CONSTRUCTION_PREFIX}700: #4A4A4A;
   ${CONSTRUCTION_PREFIX}900: #1A1A1A;
 
@@ -109,11 +115,50 @@ export const stylesheet = `
   --surface-raised: var(${CONSTRUCTION_PREFIX}700);
   --content-primary: var(${CONSTRUCTION_PREFIX}000);
   --content-secondary: var(${CONSTRUCTION_PREFIX}300);
-  --content-tertiary: var(${CONSTRUCTION_PREFIX}500);
+  /* 500 on 900 is 3.9:1 — below AA. Tertiary rises to 300 on a dark ground,
+     the same choice the prefers-color-scheme block makes. §4 constraint 3:
+     a state that fails is corrected, not shipped with an exception. */
+  --content-tertiary: var(${CONSTRUCTION_PREFIX}300);
   --line-hairline: var(${CONSTRUCTION_PREFIX}700);
   --line-rule: var(${CONSTRUCTION_PREFIX}300);
   --state-focus: var(${CONSTRUCTION_PREFIX}000);
 }
+/* The state was defined and never entered. Nothing in this system set
+   data-light — no page, no build step, no script (there is none) — so every
+   visitor got daylight and the dusk palette was unreachable code that had
+   never been rendered, let alone contrast-checked.
+
+   §4's own code sketch gives the activation: prefers-color-scheme, unless a
+   reader has explicitly chosen daylight. That is the honest trigger. A
+   time-of-day default would mean guessing at a clock the server does not have
+   and the page cannot read without JavaScript, and §4.2's "dawn/daylight/dusk"
+   is a description of the palettes, not a licence to invent the reader's local
+   time.
+
+   Constraint 4 — "manual override persists" — is NOT implemented, and cannot
+   be while the site ships no JavaScript: persisting a choice needs somewhere to
+   put it. The [data-light] hooks above are the seam, so an override is one
+   attribute away the day a runtime exists. Recorded rather than quietly
+   dropped. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-light="daylight"]) {
+    --surface-base: var(${CONSTRUCTION_PREFIX}900);
+    --surface-raised: var(${CONSTRUCTION_PREFIX}700);
+    --content-primary: var(${CONSTRUCTION_PREFIX}000);
+    --content-secondary: var(${CONSTRUCTION_PREFIX}300);
+    --content-tertiary: var(${CONSTRUCTION_PREFIX}300);
+    --content-inverse: var(${CONSTRUCTION_PREFIX}900);
+    --surface-inverse: var(${CONSTRUCTION_PREFIX}000);
+    --line-hairline: var(${CONSTRUCTION_PREFIX}700);
+    --line-default: var(${CONSTRUCTION_PREFIX}500);
+    --line-rule: var(${CONSTRUCTION_PREFIX}300);
+    --state-focus: var(${CONSTRUCTION_PREFIX}000);
+  }
+}
+
+/* §4 constraint 2 — product photography is never affected, excluded at the
+   stylesheet level rather than by convention. Altering a garment's apparent
+   colour would corrupt a purchase decision. */
 img, video, picture, figure { --surface-base: initial; }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -470,6 +515,61 @@ footer.site a { color: var(--content-secondary); display: inline-block; padding:
 export function findConstructionTokens(css: string): string[] {
   const matches = css.matchAll(/--construct-\d{3}/g);
   return [...new Set([...matches].map((m) => m[0]))].sort();
+}
+
+/** WCAG 2.1 relative luminance of a `#rrggbb` colour. */
+function luminance(hex: string): number {
+  const channels = [1, 3, 5].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255);
+  const linear = channels.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * (linear[0] as number) + 0.7152 * (linear[1] as number) + 0.0722 * (linear[2] as number);
+}
+
+/**
+ * WCAG 2.1 contrast ratio between two `#rrggbb` colours.
+ *
+ * Here rather than only in the browser check because 05_VISUAL_SYSTEM.md §4
+ * constraint 3 requires all three light states to be validated *per state*, and
+ * two of the three were unreachable from a browser for the whole life of the
+ * project: nothing ever set `data-light`, so dusk had never been rendered. A
+ * palette that fails only in a state no test can reach is a palette nobody has
+ * checked.
+ */
+export function contrastRatio(a: string, b: string): number {
+  const [lighter, darker] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return Number(((lighter + 0.05) / (darker + 0.05)).toFixed(2));
+}
+
+/**
+ * Resolves the semantic roles to concrete `#rrggbb` values for one light state.
+ *
+ * `state` is a selector fragment: `''` for daylight (bare `:root`), or
+ * `[data-light="dusk"]`, or `prefers-color-scheme: dark` for the media block.
+ * Roles not redefined by a state fall through to daylight, which is what §4
+ * constraint 1 requires — "a missing state must degrade to a complete palette".
+ */
+export function resolveRoles(css: string, state = ''): Record<string, string> {
+  const palette: Record<string, string> = {};
+  const roles: Record<string, string> = {};
+
+  for (const { property, value, selector, atRules } of declarations(css)) {
+    if (!property.startsWith('--')) continue;
+    const inMedia = atRules.some((rule) => rule.includes('prefers-color-scheme: dark'));
+    const applies = state === 'prefers-color-scheme: dark'
+      ? (selector === ':root' && !inMedia) || inMedia
+      : selector === `:root${state}` && !inMedia;
+    if (!applies) continue;
+
+    if (/^#[0-9A-Fa-f]{6}$/.test(value)) palette[property] = value;
+    else roles[property] = value;
+  }
+
+  const resolved: Record<string, string> = {};
+  for (const [role, value] of Object.entries(roles)) {
+    const reference = /^var\(\s*(--[a-z0-9-]+)\s*\)$/.exec(value)?.[1];
+    const colour = reference === undefined ? undefined : palette[reference];
+    if (colour !== undefined) resolved[role] = colour;
+  }
+  return resolved;
 }
 
 /** One declaration, with the blocks it sits inside. */

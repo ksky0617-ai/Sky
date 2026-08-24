@@ -141,7 +141,14 @@ const browser = await chromium.launch({
 
 const errors = [];
 const motionSeen = new Map();
-const viewports = [['desktop', 1280, 900], ['tablet', 834, 1112], ['mobile', 390, 844]];
+// Every viewport in BOTH light states. The dusk palette had been defined since
+// the stylesheet was written and never once rendered, because nothing activated
+// it — so its contrast was unknown rather than acceptable. 05_VISUAL_SYSTEM.md
+// §4 constraint 3 asks for validation per state, and one state was unreachable.
+const viewports = [
+  ['desktop', 1280, 900, 'light'], ['tablet', 834, 1112, 'light'], ['mobile', 390, 844, 'light'],
+  ['desktop-dark', 1280, 900, 'dark'], ['tablet-dark', 834, 1112, 'dark'], ['mobile-dark', 390, 844, 'dark'],
+];
 // A checkout is run first so the sandbox and confirmation pages have something
 // real to show. These are states, not fixtures: the same code path a customer
 // takes produced them.
@@ -179,8 +186,8 @@ const routes = [
 ];
 
 for (const [name, path] of routes) {
-  for (const [size, width, height] of viewports) {
-    const page = await browser.newPage({ viewport: { width, height } });
+  for (const [size, width, height, scheme] of viewports) {
+    const page = await browser.newPage({ viewport: { width, height }, colorScheme: scheme });
     const id = `${name}/${size}`;
     page.on('pageerror', (e) => errors.push(`${id}: ${e.message}`));
     // The 404 document is REQUESTED with an address that does not exist, so its
@@ -230,8 +237,59 @@ for (const [name, path] of routes) {
         .filter((x) => x.r.height > 0 && x.r.height < minTarget)
         .map((x) => `${x.el.tagName.toLowerCase()}"${(x.el.innerText || '').trim().slice(0, 18)}"@${Math.round(x.r.height)}px`);
 
+      /* 05_VISUAL_SYSTEM.md §4 constraint 3: "All three states pass WCAG AA.
+         Validated per state in CI." Only the purchase button was ever measured,
+         and only in whichever state the browser happened to be in — which for
+         the whole life of this project was daylight, because nothing activated
+         another one.
+
+         So: every element that paints text of its own, against the background
+         actually behind it. Walking up for the background matters, because a
+         transparent element inherits whatever it sits on, and it was exactly a
+         resolved-to-inherited colour that produced the 1:1 button once. */
+      // Returns null when no element in the chain paints an opaque background.
+      // That happens when a page leaves the canvas to the browser, and the
+      // honest answer is then "not determinable from CSS" — NOT a guess. The
+      // first version fell back to the body's own transparent value, which
+      // parses as black, so every dark-on-canvas page reported a 1:1 ratio and
+      // a site-wide failure that did not exist. Inventing a background to
+      // finish a calculation is the same error as inventing a measurement.
+      const effectiveBackground = (el) => {
+        for (let node = el; node !== null; node = node.parentElement) {
+          const bg = getComputedStyle(node).backgroundColor;
+          const parts = bg.match(/[\d.]+/g);
+          if (parts !== null && (parts[3] === undefined || Number(parts[3]) > 0)) return bg;
+        }
+        return null;
+      };
+
+      const ownText = (el) => [...el.childNodes]
+        .filter((n) => n.nodeType === 3 && (n.textContent || '').trim().length > 0).length > 0;
+
+      const lowContrast = [...document.querySelectorAll('main *, header *, footer *')]
+        .filter((el) => ownText(el) && el.getClientRects().length > 0)
+        .map((el) => {
+          const style = getComputedStyle(el);
+          const size = parseFloat(style.fontSize);
+          const bold = Number(style.fontWeight) >= 700;
+          // SC 1.4.3: large text is 18.66px bold or 24px, and needs 3:1.
+          const large = size >= 24 || (bold && size >= 18.66);
+          const background = effectiveBackground(el);
+          return {
+            what: `${el.tagName.toLowerCase()}${el.className ? '.' + String(el.className).split(' ')[0] : ''}`,
+            ratio: background === null ? null : Number(contrast(style.color, background).toFixed(2)),
+            required: large ? 3 : 4.5,
+          };
+        })
+        .filter((x) => x.ratio !== null && x.ratio < x.required)
+        .map((x) => `${x.what} ${x.ratio}:1 (needs ${x.required}:1)`);
+
       const button = document.querySelector('form.order button');
       return {
+        lowContrast: [...new Set(lowContrast)],
+        contrastUndetermined: [...document.querySelectorAll('main *, header *, footer *')]
+          .filter((el) => ownText(el) && el.getClientRects().length > 0)
+          .filter((el) => effectiveBackground(el) === null).length,
         // Every element carrying text, not just main's direct children.
         //
         // This is the check a static analyser cannot make. The motion system is
@@ -327,6 +385,15 @@ for (const [name, path] of routes) {
     }
     if (m.textLen < 60) errors.push(`${id}: only ${m.textLen} visible characters`);
     if (m.small.length > 0) errors.push(`${id}: below the ${MIN_TARGET_PX}px AA target minimum — ${m.small.join(', ')}`);
+    if (m.lowContrast.length > 0) {
+      errors.push(`${id}: WCAG 1.4.3 contrast failures — ${m.lowContrast.join(', ')}`);
+    }
+    if (m.contrastUndetermined > 0) {
+      // Not a pass. A page whose text sits on the browser's canvas rather than
+      // a colour it declares has a contrast ratio nobody here can compute, and
+      // "could not check" is not "fine".
+      errors.push(`${id}: ${m.contrastUndetermined} element(s) paint text on an undeclared background, so their contrast is UNVERIFIABLE`);
+    }
     if (name === 'product') {
       if (m.button === null) errors.push(`${id}: the product page offers no way to buy`);
       else {
@@ -347,9 +414,9 @@ for (const [name, path] of routes) {
     // silently fail to match would pass each one of them, and the site would
     // be exactly the static page the motion language was written to replace.
     // Measured once per route, at the widest viewport.
-    if (size === 'desktop') {
+    if (size === 'desktop' || size === 'desktop-dark') {
       for (const [preference, expectation] of [['no-preference', 'some'], ['reduce', 'none']]) {
-        const probe = await browser.newPage({ viewport: { width, height }, reducedMotion: preference });
+        const probe = await browser.newPage({ viewport: { width, height }, colorScheme: scheme, reducedMotion: preference });
         await probe.goto(`http://127.0.0.1:${port}${path}`, { waitUntil: 'load' });
         const running = await probe.evaluate(() => document.getAnimations().map((a) => ({
           name: a.animationName ?? 'unnamed',

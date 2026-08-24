@@ -133,7 +133,16 @@ function page(status: number, title: string, body: string): Response {
      24px target minimum. A page a customer reaches after paying is not a place
      to relax an accessibility floor. */
   :root { color-scheme: light dark; }
-  body { font: 16px/1.6 system-ui, sans-serif; margin: 0; padding: 3rem 1.5rem; max-width: 34rem; }
+  /* Canvas/CanvasText declared rather than inherited from the browser. These
+     pages left the ground colour to the UA, which meant their text contrast
+     could not be computed from the page at all — a checker had to guess a
+     background, and a guessed background is a guessed conformance claim. It is
+     also the same shape as the defect that put the purchase button's label at
+     1:1: a colour that resolved to something nobody wrote down. */
+  body {
+    font: 16px/1.6 system-ui, sans-serif; margin: 0; padding: 3rem 1.5rem; max-width: 34rem;
+    background: Canvas; color: CanvasText;
+  }
   h1 { font-size: 1.4rem; font-weight: 500; letter-spacing: 0.02em; }
   p { margin: 1rem 0; }
   ul { padding-left: 1.2rem; }

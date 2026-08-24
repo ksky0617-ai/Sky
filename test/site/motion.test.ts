@@ -22,10 +22,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  contrastRatio,
   declarations,
   findInlineMotionValues,
   findLoadBearingMotion,
   findMotionProhibitions,
+  resolveRoles,
   stylesheet,
 } from '../../src/site/styles.ts';
 import { SECURITY_HEADERS } from '../../src/http/router.ts';
@@ -227,4 +229,93 @@ test('PARSER: braces inside comments and strings do not shift the block stack', 
   const found = declarations('.c { /* } */ content: "}"; color: red; }');
   assert.deepEqual(found.map((d) => d.selector), ['.c', '.c']);
   assert.equal(found[1]?.property, 'color');
+});
+
+// --- the light states, validated per state ------------------------------
+//
+// 05_VISUAL_SYSTEM.md §4 constraint 3: "All three states pass WCAG AA.
+// Validated per state in CI. A state that fails is corrected, not shipped with
+// an exception."
+//
+// It had never been validated in any state but one, and could not have been:
+// nothing in the system ever set `data-light`, so dawn and dusk were
+// unreachable code. The browser check now renders both colour schemes, and this
+// is the same property held at unit level, where it fails in a second rather
+// than needing a browser to be installed.
+
+const STATES: ReadonlyArray<readonly [string, string]> = [
+  ['daylight', ''],
+  ['dawn', '[data-light="dawn"]'],
+  ['dusk', '[data-light="dusk"]'],
+  ['dark (prefers-color-scheme)', 'prefers-color-scheme: dark'],
+];
+
+test('every light state defines a complete palette, not a partial one', () => {
+  // §4 constraint 1. A role whose only definition lives in a state block leaves
+  // any other state with an undefined variable — which does not fail loudly, it
+  // falls back to the inherited colour. That is exactly how the purchase button
+  // came to paint its label in its own background.
+  const daylight = resolveRoles(stylesheet, '');
+  for (const role of ['--surface-base', '--content-primary', '--content-secondary', '--content-tertiary', '--line-hairline']) {
+    assert.ok(daylight[role] !== undefined, `${role} is not defined on bare :root`);
+  }
+  for (const [name, selector] of STATES) {
+    const state = { ...daylight, ...resolveRoles(stylesheet, selector) };
+    for (const role of Object.keys(daylight)) {
+      assert.ok(state[role] !== undefined, `${name} leaves ${role} undefined`);
+    }
+  }
+});
+
+test('every light state meets WCAG 1.4.3 AA for body text', () => {
+  const daylight = resolveRoles(stylesheet, '');
+  const failures: string[] = [];
+
+  for (const [name, selector] of STATES) {
+    const roles = { ...daylight, ...resolveRoles(stylesheet, selector) };
+    const surface = roles['--surface-base'] as string;
+    for (const role of ['--content-primary', '--content-secondary', '--content-tertiary']) {
+      const ratio = contrastRatio(roles[role] as string, surface);
+      if (ratio < 4.5) failures.push(`${name}: ${role} on --surface-base is ${ratio}:1, below 4.5:1`);
+    }
+    // The purchase button inverts the ground; it is the one control that
+    // completes a sale, so it is checked in every state too.
+    const inverse = contrastRatio(roles['--content-inverse'] as string, roles['--surface-inverse'] as string);
+    if (inverse < 4.5) failures.push(`${name}: the purchase button is ${inverse}:1, below 4.5:1`);
+  }
+
+  assert.deepEqual(failures, []);
+});
+
+test('CONTRAST CONTROL: the ratio calculation is right, and catches the value that shipped', () => {
+  // Known pairs, so a bug in the calculator cannot make the check above pass by
+  // computing nonsense. The third is the defect this cycle found: #8A8A8A on
+  // white carried the footer, every list note and every form hint on every page
+  // since the site was built.
+  assert.equal(contrastRatio('#000000', '#FFFFFF'), 21);
+  assert.equal(contrastRatio('#FFFFFF', '#FFFFFF'), 1);
+  assert.ok(contrastRatio('#8A8A8A', '#FFFFFF') < 4.5, 'the value that shipped must fail');
+  assert.ok(contrastRatio('#767676', '#FFFFFF') >= 4.5, 'the replacement must pass');
+});
+
+test('the dark state is ACTIVATED, not merely defined', () => {
+  // Found by mutation M2, and it is this cycle's own premise recurring one
+  // level up. Deleting the whole `@media (prefers-color-scheme: dark)` block
+  // left all 25 tests green: with no activation the state resolves to daylight,
+  // daylight passes AA, and the suite is satisfied by the feature not existing.
+  //
+  // That is exactly how dusk survived from the day the stylesheet was written —
+  // defined, never entered, never rendered, never checked. A test that passes
+  // when the thing under test is absent is not a test of it.
+  const daylight = resolveRoles(stylesheet, '');
+  const dark = resolveRoles(stylesheet, 'prefers-color-scheme: dark');
+
+  assert.notEqual(
+    dark['--surface-base'], daylight['--surface-base'],
+    'a reader who prefers dark gets the daylight ground: the state is defined but not activated',
+  );
+  assert.notEqual(dark['--content-primary'], daylight['--content-primary']);
+  // §4's own sketch: an explicit choice of daylight must win over the
+  // preference, which is what makes constraint 4's override possible later.
+  assert.match(stylesheet, /:root:not\(\[data-light="daylight"\]\)/);
 });
