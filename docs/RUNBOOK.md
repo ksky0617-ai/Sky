@@ -44,11 +44,32 @@ After deploying, run the smoke test **against the deployed origin, with the
 commit you deployed**:
 
 ```bash
-node --experimental-strip-types scripts/smoke-test.mjs https://<origin> $(git rev-parse HEAD)
+node --experimental-strip-types scripts/smoke-test.mjs https://<origin> $(git rev-parse HEAD) --json=audit.json
 ``` A deploy is
 not verified until it passes there. The code passing locally has already proved
 insufficient once: the Pages function could not load on Workers at all while
 every test passed.
+
+**Read the exit code, not the prose.** There are three:
+
+| Exit | Meaning |
+|---|---|
+| `0` | Everything that could be checked was checked, and passed. |
+| `1` | Something failed. The named check is the finding. |
+| `3` | Nothing failed, but something **could not be checked**. This is not a pass. |
+
+`3` is the one that gets misread. It appears when a deployment publishes no
+product, because there is then no valid checkout to write an intent through and
+the storage write path is unexercised. `--json` writes the raw findings, with a
+status per check, so the record does not depend on anyone quoting the summary
+line correctly.
+
+The auditor does **not** believe `/health`. Every count it reports is
+cross-checked against the sitemap, the purchase form, the confirmation route, and
+a real write. The single exception is a report of *ill* health, which is believed
+on its own — so a deployment answering `status: degraded` fails immediately.
+**A Pages deployment with no `OLIBANA_*` paths set has no writable store and will
+do exactly that.** That is PCQ-004, not a broken deploy; see GATE-001.
 
 ## Configuration
 

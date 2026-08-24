@@ -46,6 +46,16 @@ interface Fault {
   readonly checkoutStatus?: number;
   readonly webhookStatus?: number;
   readonly notFoundStatus?: number;
+  /** Products the sitemap advertises. Cross-checked against /health. */
+  readonly sitemapProducts?: readonly string[];
+  /** Whether the product page offers a purchase. Cross-checked against `accepting`. */
+  readonly productPageHasForm?: boolean;
+  /** What the confirmation route answers — the order log's read path. */
+  readonly confirmationStatus?: number;
+  /** What a VALID selection answers — the intent write path. */
+  readonly validCheckoutStatus?: number;
+  /** Whether a forged signature is accepted. */
+  readonly acceptForgedWebhook?: boolean;
 }
 
 /**
@@ -71,6 +81,19 @@ function deployment(fault: Fault = {}): Promise<{ origin: string; close: () => P
     accepting: false,
   };
 
+  const products = fault.sitemapProducts ?? [];
+  const sitemap =
+    '<?xml version="1.0" encoding="UTF-8"?><urlset>' +
+    ['/', ...products].map((p) => `<url><loc>${p}</loc></url>`).join('') +
+    '</urlset>';
+
+  const productPage =
+    fault.productPageHasForm === true
+      ? '<main><form method="post" action="/checkout">' +
+        '<input type="hidden" name="productId" value="PRD_x">' +
+        '<select name="sku"><option value="OLB-CT-001-STN-M">M</option></select></form></main>'
+      : '<main>a product, not for sale</main>';
+
   const server: Server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const headers = { ...(fault.headers ?? HEADERS) };
@@ -81,8 +104,27 @@ function deployment(fault: Fault = {}): Promise<{ origin: string; close: () => P
 
     if (url.pathname === '/health') return send(200, JSON.stringify(health), 'application/json');
     if (url.pathname === '/') return send(200, home);
-    if (url.pathname === '/checkout') return send(fault.checkoutStatus ?? 422, 'refused');
-    if (url.pathname === '/webhooks/payment') return send(fault.webhookStatus ?? 400, 'unverified');
+    if (url.pathname === '/sitemap.xml') return send(200, sitemap, 'application/xml');
+    if (products.includes(url.pathname)) return send(200, productPage);
+    if (url.pathname === '/order/confirmation') {
+      return send(fault.confirmationStatus ?? 202, 'payment received');
+    }
+    if (url.pathname === '/checkout') {
+      // A valid selection and a nonexistent product take different paths: the
+      // first exercises the intent write, the second must simply be refused.
+      let body = '';
+      req.on('data', (chunk) => { body += String(chunk); });
+      req.on('end', () => {
+        const valid = !body.includes('PRD_nonexistent');
+        send(valid ? (fault.validCheckoutStatus ?? 503) : (fault.checkoutStatus ?? 422), 'checkout');
+      });
+      return undefined;
+    }
+    if (url.pathname === '/webhooks/payment') {
+      const forged = req.headers['x-olibana-signature'] !== undefined;
+      if (forged && fault.acceptForgedWebhook === true) return send(200, 'accepted');
+      return send(fault.webhookStatus ?? 400, 'unverified');
+    }
     if (url.pathname === '/sandbox/pay') {
       return fault.exposeSandbox === true
         ? send(200, '<p>Nothing is charged here</p><form></form>')
@@ -133,9 +175,18 @@ async function auditFaulty(fault: Fault, expectedBuild?: string): Promise<AuditR
 test('CONTROL: the auditor passes a deployment that is correct', async () => {
   // Without this every other test here would also pass against an auditor that
   // simply always fails.
-  const result = await auditFaulty({}, GOOD_BUILD);
+  const result = await auditFaulty({
+    sitemapProducts: ['/products/olb-ct-001'],
+    productPageHasForm: true,
+    healthBody: {
+      build: GOOD_BUILD, status: 'ok', storage: 'available',
+      published: 1, openRuns: 1, accepting: true,
+    },
+  }, GOOD_BUILD);
+
   assert.equal(result.code, 0, `a correct deployment was failed:\n${result.output}`);
-  assert.match(result.output, /all checks passed/);
+  assert.match(result.output, /Every check passed/);
+  assert.match(result.output, /0 failed · 0 unverified/);
 });
 
 // --- false claims it must catch ------------------------------------------
@@ -252,17 +303,152 @@ test('it fails when the webhook accepts an unsigned payload', async () => {
   assert.match(result.output, /an unsigned webhook produced 200/);
 });
 
+// --- §12: /health says ok, but the thing it reports on is broken ---------
+//
+// These are the cases the auditor previously could not catch, because it took
+// /health's word. Each deployment below reports `status: ok, storage:
+// available` and is lying about it.
+
+const LYING_HEALTH = {
+  build: GOOD_BUILD, status: 'ok', storage: 'available',
+  published: 0, openRuns: 0, accepting: false,
+};
+
+test('CASE A: /health says ok while the order log cannot be READ', async () => {
+  // The confirmation route reads the order log. If that read fails, the log is
+  // not readable — whatever /health claims about it.
+  const result = await auditFaulty({ healthBody: LYING_HEALTH, confirmationStatus: 500 });
+
+  assert.notEqual(result.code, 0, 'a deployment with an unreadable order log was verified');
+  assert.match(result.output, /confirmation route returned 500/);
+});
+
+test('CASE A2: an honest 503 from the confirmation route is still an unreadable log', async () => {
+  // The router now answers 503 rather than throwing when the order log cannot
+  // be read, which is better for the customer and must not become a way past
+  // the auditor: an unreadable log is unreadable whichever code it admits it
+  // with. Only 202 — the log was read and holds no such order — is a pass.
+  const result = await auditFaulty({ healthBody: LYING_HEALTH, confirmationStatus: 503 });
+
+  assert.notEqual(result.code, 0, 'a graceful failure to read the order log was verified');
+  assert.match(result.output, /confirmation route returned 503/);
+});
+
+test('CASE B: /health says ok while storage cannot be WRITTEN to', async () => {
+  // A valid selection records a checkout intent. A 500 there is a failed write,
+  // and a deployment that cannot write is one that loses orders.
+  const result = await auditFaulty({
+    healthBody: { ...LYING_HEALTH, published: 1, accepting: true },
+    sitemapProducts: ['/products/olb-ct-001'],
+    productPageHasForm: true,
+    validCheckoutStatus: 500,
+  });
+
+  assert.notEqual(result.code, 0, 'a deployment that cannot write was verified');
+  assert.match(result.output, /a valid selection produced 500/);
+});
+
+test('CASE C: /health says ok while webhook verification is broken', async () => {
+  // "Verification is enabled" is a configuration value. This is the behaviour:
+  // a forged signature that is accepted means anyone can post a paid order.
+  const result = await auditFaulty({ healthBody: LYING_HEALTH, acceptForgedWebhook: true });
+
+  assert.notEqual(result.code, 0, 'a deployment accepting forged signatures was verified');
+  assert.match(result.output, /a forged signature produced 200/);
+});
+
+test('CASE E: /health says ok while its product count is a fiction', async () => {
+  // Claims three published products; the site serves none. Either the report is
+  // wrong or product lookup is broken. Both are failures.
+  const result = await auditFaulty({
+    healthBody: { ...LYING_HEALTH, published: 3 },
+    sitemapProducts: [],
+  });
+
+  assert.notEqual(result.code, 0, 'a false published count was verified');
+  assert.match(result.output, /claims 3 published product\(s\) but the site serves 0/);
+});
+
+test('CASE E2: /health claims it is accepting orders while nothing can be bought', async () => {
+  const result = await auditFaulty({
+    healthBody: { ...LYING_HEALTH, published: 1, accepting: true },
+    sitemapProducts: ['/products/olb-ct-001'],
+    productPageHasForm: false,
+  });
+
+  assert.notEqual(result.code, 0, 'a false accepting claim was verified');
+  assert.match(result.output, /does not offer a purchase/);
+});
+
+test('CASE F: /health says ok while the checkout accepts a nonexistent product', async () => {
+  const result = await auditFaulty({ healthBody: LYING_HEALTH, checkoutStatus: 303 });
+
+  assert.notEqual(result.code, 0, 'a checkout accepting a nonexistent product was verified');
+  assert.match(result.output, /it must be refused/);
+});
+
+test('CASE D: there is no database, and the auditor does not pretend to check one', async () => {
+  // §12 Case D names invalid database credentials. This system has no database
+  // — persistence is an append-only log — so the case is NOT_APPLICABLE rather
+  // than passed. Recording it as a test keeps the absence deliberate: if a
+  // database is ever added, this is where the gap will be visible.
+  //
+  // Run against a fully correct deployment, so exit 0 means "nothing was left
+  // unchecked" rather than "the write path was skipped".
+  const result = await auditFaulty({
+    sitemapProducts: ['/products/olb-ct-001'],
+    productPageHasForm: true,
+    healthBody: {
+      build: GOOD_BUILD, status: 'ok', storage: 'available',
+      published: 1, openRuns: 1, accepting: true,
+    },
+  }, GOOD_BUILD);
+  assert.equal(result.code, 0, `the control deployment was not passed:\n${result.output}`);
+  assert.ok(
+    !/database/i.test(result.output),
+    'the auditor claims to check a database that does not exist',
+  );
+});
+
+test('an UNVERIFIED check is never reported as a pass', async () => {
+  // A deployment with nothing published cannot exercise the write path. That
+  // must not silently count as fine — exit 3, not 0.
+  const result = await auditFaulty({ healthBody: LYING_HEALTH, sitemapProducts: [] });
+
+  assert.equal(result.code, 3, `expected exit 3 for an unverified check, got ${result.code}`);
+  assert.match(result.output, /unverified/);
+  assert.match(result.output, /"Could not check" is not "fine"/);
+  assert.ok(!/Every check passed/.test(result.output));
+});
+
 // --- what the auditor cannot see ----------------------------------------
 
-test('DISCLOSED: the auditor believes what /health says about itself', async () => {
-  // A deployment whose storage is broken but which reports `ok` passes. The
-  // health logic is tested separately, against the real implementation; from
-  // outside, this auditor cannot distinguish an honest report from a lie.
-  // Recorded as a test so the limit is visible in the output rather than only
-  // in prose.
+test('CLOSED: a /health that lies about its own counts no longer passes', async () => {
+  // This test previously recorded the opposite — that the auditor believed
+  // whatever /health said about itself. Every claim is now cross-checked
+  // against something observable, so the lie is caught.
   const result = await auditFaulty({
     healthBody: { build: GOOD_BUILD, status: 'ok', storage: 'available', published: 99, openRuns: 99, accepting: true },
   }, GOOD_BUILD);
 
-  assert.equal(result.code, 0, 'this documents a known limit; if it now fails, the limit closed');
+  assert.notEqual(result.code, 0, 'a /health reporting 99 phantom products was believed');
+  assert.match(result.output, /claims 99 published product\(s\) but the site serves 0/);
+});
+
+test('DISCLOSED: what remains unverifiable from outside', async () => {
+  // The auditor observes behaviour, so it catches a /health that contradicts
+  // the system. What it still cannot see is a component that is broken in a way
+  // nothing observable depends on — a store that reads and writes correctly
+  // during the audit and fails afterwards, for instance. Point-in-time
+  // observation is what this is; continuous assurance is not.
+  const result = await auditFaulty({
+    sitemapProducts: ['/products/olb-ct-001'],
+    productPageHasForm: true,
+    healthBody: {
+      build: GOOD_BUILD, status: 'ok', storage: 'available',
+      published: 1, openRuns: 1, accepting: true,
+    },
+  }, GOOD_BUILD);
+
+  assert.equal(result.code, 0, 'the control must still pass; this test only records the limit');
 });

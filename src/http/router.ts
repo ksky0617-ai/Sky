@@ -458,7 +458,29 @@ export async function handleRequest(options: RouterOptions, request: Request): P
 
   if (pathname === CONFIRMATION_PATH) {
     const reference = new URL(request.url).searchParams.get('ref') ?? '';
-    return confirmation(options.stores.orders.placementByReference(reference));
+    let placement: OrderPlacement | null;
+    try {
+      placement = options.stores.orders.placementByReference(reference);
+    } catch {
+      // The order log could not be read. `/health` already degrades on this,
+      // but this route did not, and a customer who has just paid was landing
+      // on an unhandled 500 — found by the deployment auditor against a
+      // deployment with no writable store, which is what a Pages deployment
+      // without a durable binding is (PCQ-004).
+      //
+      // Deliberately NOT the 202 "still being recorded" page: that page asserts
+      // the order is on its way, and we do not know that. We know only that we
+      // cannot look. Saying so is the honest answer, and 503 is the honest code.
+      return page(
+        503,
+        'Your order cannot be looked up right now',
+        '<p>Your payment went through. We cannot read the order records at this moment, so we ' +
+          'cannot show you the confirmation — this is a fault on our side, not with your ' +
+          'payment.</p><p>Nothing further is needed from you. Keep this page\'s address: it will ' +
+          'show your order once the fault is cleared.</p>',
+      );
+    }
+    return confirmation(placement);
   }
 
   if (pathname === WEBHOOK_PATH) {

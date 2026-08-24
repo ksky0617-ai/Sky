@@ -36,6 +36,7 @@ import { HmacWebhookVerifier, signWebhook, type SignedWebhook } from '../../src/
 import { OrderStore } from '../../src/order/store.ts';
 import { PreorderRunStore, type RunInput } from '../../src/preorder/run.ts';
 import { FileStorage } from '../../src/persistence/file-storage.ts';
+import type { LogStorage } from '../../src/persistence/storage.ts';
 
 const dir = mkdtempSync(resolve(tmpdir(), 'olibana-http-'));
 let n = 0;
@@ -356,6 +357,35 @@ test('a confirmation reference that names nothing shows no one else order', asyn
     assert.equal(response?.status, 202, `${ref || '(empty)'} resolved to an order`);
     assert.ok(!/OLB-\d/.test(body), 'an order number leaked to a wrong reference');
   }
+});
+
+test('a customer whose order cannot be looked up is not shown a 500, and is not told it is fine', async () => {
+  // Found by the deployment auditor, not by this suite: against a deployment
+  // whose order log cannot be read, `/health` degraded honestly while this
+  // route threw — so the person who had just paid got an unhandled 500.
+  //
+  // The 202 "still being recorded" page would be worse than the 500, not
+  // better: it asserts the order is on its way, and an unreadable log is
+  // exactly the state in which nobody knows that.
+  class Unreadable implements LogStorage {
+    readonly location = 'a store that cannot be read';
+    read(): never { throw new Error('storage is gone'); }
+    append(): never { throw new Error('storage is gone'); }
+    truncate(): never { throw new Error('storage is gone'); }
+    withLock<R>(work: () => R): R { return work(); }
+  }
+  const o = options({ stores: { ...stores(), orders: new OrderStore(new Unreadable()) } });
+
+  const response = await handleRequest(
+    o,
+    new Request(`https://olibana.test${CONFIRMATION_PATH}?ref=EVT_whatever`),
+  );
+  const body = await response!.text();
+
+  assert.equal(response?.status, 503, 'an unreadable order log reached the customer as a 500');
+  assert.match(body, /cannot read the order records/);
+  assert.ok(!/still being recorded/.test(body), 'it claimed the order was on its way');
+  assert.ok(!/OLB-\d/.test(body), 'an order number appeared from a store that cannot be read');
 });
 
 test('a customer arriving before the webhook is told the truth, not shown an error', async () => {

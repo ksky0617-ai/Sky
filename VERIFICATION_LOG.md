@@ -9,6 +9,27 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-23-019 · V3 + V4 + V6-boundary · Removing the auditor's dependence on `/health`
+
+| | |
+| --- | --- |
+| **Target** | `scripts/smoke-test.mjs` (rewritten), `test/meta/deploy-audit.test.ts`, `src/http/router.ts` |
+| **Why** | V-018 closed with a disclosed limit: *the auditor believes what `/health` says about itself.* A deployment reporting `ok` while its storage was broken passed. `/health` is written by the same author as the auditor, so a shared wrong assumption produced agreement rather than detection — the auditor and the application were not independent oracles. |
+| **What changed — cross-checks, not credence** | Every claim `/health` makes is now checked against something the application cannot fake without also breaking what a customer sees: `published` → the product pages actually in `sitemap.xml`; `openRuns`/`accepting` → whether a product page actually offers a purchase; `storage` (read) → the confirmation route, which reads the order log; `storage` (write) → **a real write**, a valid checkout POST that records an intent through the live path. The auditor imports nothing from `src/` — it speaks HTTP only, so it cannot inherit the application's judgement. |
+| **The one asymmetry, stated deliberately** | A report of *ill* health is still believed. "I am fine" serves the claimant and needs corroboration; "I am broken" is an admission against interest and nothing is gained by disbelieving it. So `status: degraded` fails on the report alone. |
+| **Status taxonomy** | `PASS · FAIL · UNVERIFIED · UNEXECUTED · EXTERNALLY_BLOCKED · NOT_APPLICABLE`, with **UNVERIFIED → PASS forbidden**, enforced by the exit code: `1` on any FAIL, **`3` on any UNVERIFIED**, `0` only when everything that could be checked was. `--json` writes the raw findings, so the prose is not the record. |
+| **Method — the false-state matrix** | Twenty deployments, each wrong in exactly one way, each requiring a non-zero exit **naming that fault**; plus a control requiring a pass, without which every one of them would also pass against an auditor that always fails. New this cycle: /health `ok` while the order log cannot be read (A) · while it answers 503 rather than throwing (A2) · while storage cannot be written (B) · while a forged signature is accepted (C) · while the published count is fiction (E) · while `accepting` is true and nothing can be bought (E2) · while the checkout accepts a nonexistent product (F). |
+| **CASE D — declared, not claimed** | §12 names invalid database credentials. **There is no database** — persistence is an append-only log — so this is `NOT_APPLICABLE`, and the test asserts the auditor never uses the word. Recorded rather than skipped, so the gap becomes visible the day a database is added. |
+| **Executed against real deployments, not only mocks** | (1) **Fixture, one product published:** 17 passed · 0 failed · 0 unverified, **exit 0**. The write reached real storage — `intents.jsonl` holds one record, `OLB-CT-001-STN-S ×1, 68000 JPY, deployment-audit@example.invalid` — and `orders.jsonl` is **empty**: the auditor proves the write path without creating an order. (2) **Real `dist`, closed, nothing published:** 16 passed · 0 failed · **1 unverified**, **exit 3** — the write path cannot be exercised and is not passed. (3) **Storage that cannot be written:** **exit 1**, 14 · 2 · 1. |
+| **Defect found by run (3), in the application** | With an unreadable order log, `/health` degraded honestly while `CONFIRMATION_PATH` threw — **a customer who had just paid got an unhandled 500.** Now a 503 that says the records cannot be read. Deliberately *not* the 202 "still being recorded" page: that page asserts the order is on its way, and an unreadable log is exactly the state in which nobody knows that. Killed by mutation (catch → `confirmation(null)` → test fails) and pinned from outside by CASE A2, so the friendlier code can never become a way past the auditor. |
+| **Consequence for GATE-001, measured rather than predicted** | A Pages deployment with no storage binding will come back **1 FAIL + 1 UNVERIFIED, not clean** — `storage: unavailable`, `/health` 503. That is PCQ-004 arriving in production, not a failed deploy. `HUMAN_GATE_QUEUE.md` now says so before the command, so the result is not misread in either direction. |
+| **Observed** | 341/341 pass. Auditor 17/17 exit 0 against a working deployment; exit 3 against one it cannot fully check; exit 1 against a broken one. |
+| **Result** | **PASS** for the auditor's discrimination. **`COMPLETION` stays FALSE** — nothing here touches GATE-001/002/003. |
+| **Standing limit, unchanged and not narrowed** | Point-in-time observation. A component that reads and writes correctly during the audit and fails afterwards is invisible to it; that is what an audit is, and continuous assurance is not built. Still never exercised: TLS · DNS · a real payment. |
+| **Commit** | written against `0ca3775` |
+
+---
+
 ## V-2026-08-22-018 · V0 + V3 + V4 · Verifying the deployment auditor itself
 
 | | |

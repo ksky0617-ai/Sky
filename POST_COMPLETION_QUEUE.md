@@ -58,6 +58,12 @@ of them is a defect. A defect goes to the Critical Path, not here.
 - **Rationale:** The logs are files. Cloudflare Pages Functions have no writable
   filesystem, so `live` cannot run there as configured. `closed` has nothing to
   write and deploys as-is.
+- **Observed, not predicted (V-2026-08-23-019):** a deployment with no writable
+  store reports `status: degraded, storage: unavailable` and answers `/health`
+  with **503**, and `scripts/smoke-test.mjs` fails it by name. That is the
+  intended behaviour of both, and it means the first Cloudflare deploy under
+  GATE-001 will come back **1 FAIL + 1 UNVERIFIED, not clean** — see GATE-001,
+  which now says so up front rather than letting it read as a broken deploy.
 - **Expected value:** Without it, no real order can be persisted in production.
 - **Risk:** Choosing the store (D1, R2, a small host with a disk) changes the
   persistence layer, which is the most heavily verified part of this system.
