@@ -17,7 +17,7 @@ import { IntentStore } from '../src/checkout/intents.ts';
 import { HmacWebhookVerifier, SandboxGateway } from '../src/checkout/sandbox.ts';
 import { Catalog } from '../src/catalog/catalog.ts';
 import { validateEnvironment } from '../src/http/environment.ts';
-import { handleRequest, UnconfiguredVerifier, type RouterOptions } from '../src/http/router.ts';
+import { handleRequest, internalError, UnconfiguredVerifier, type RouterOptions } from '../src/http/router.ts';
 import { OrderStore } from '../src/order/store.ts';
 import { UnavailableStorage, type LogStorage } from '../src/persistence/storage.ts';
 import { PreorderRunStore } from '../src/preorder/run.ts';
@@ -97,7 +97,26 @@ async function optionsFor(env: PagesContext['env']): Promise<RouterOptions> {
   return { stores, env, gateway: new UnconfiguredGateway(), verifier: new HmacWebhookVerifier(secret) };
 }
 
+/**
+ * The deployment's outermost error boundary.
+ *
+ * There was none. Anything that threw — and `validateEnvironment` throws by
+ * design on a half-configured deployment, the most likely state of a first
+ * deploy — escaped to the platform, which answered with its own error page:
+ * no security headers, no `referrer-policy`, and content this project does not
+ * control on a domain that carries its name.
+ *
+ * The catch is deliberately total. A boundary that re-throws some errors is a
+ * boundary with a hole, and the one thing known about an unexpected error is
+ * that nobody predicted its shape.
+ */
 export async function onRequest(context: PagesContext): Promise<Response> {
-  const routed = await handleRequest(await optionsFor(context.env), context.request);
-  return routed ?? context.env.ASSETS.fetch(context.request);
+  try {
+    const routed = await handleRequest(await optionsFor(context.env), context.request);
+    return routed ?? context.env.ASSETS.fetch(context.request);
+  } catch (error) {
+    // The operator's copy. The visitor's copy carries none of it.
+    console.error('unhandled request failure', error);
+    return internalError();
+  }
 }

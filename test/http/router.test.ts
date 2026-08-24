@@ -23,6 +23,8 @@ import {
 } from '../../src/checkout/checkout.ts';
 import {
   CONFIRMATION_PATH,
+  internalError,
+  SECURITY_HEADERS,
   CHECKOUT_PATH,
   handleRequest,
   submissionKey,
@@ -421,4 +423,66 @@ test('form post to paid order to confirmation, end to end, on real files', async
   );
   assert.equal(confirmed?.status, 200);
   assert.match(await confirmed!.text(), new RegExp(order.number));
+});
+
+// --- the failure nobody planned for -------------------------------------
+
+test('the internal error page says nothing about the error', async () => {
+  // It is rendered by code that just failed, on a request that may be hostile.
+  // An error string is the most reliable way to hand an attacker the shape of
+  // the system, so the visitor's copy carries none of it.
+  const response = internalError();
+  const body = await response.text();
+
+  assert.equal(response.status, 500);
+  assert.ok(!/stack|Error:|at \w+ \(|\/home\/|\.ts:|node_modules/i.test(body), `the page leaks internals:\n${body}`);
+  assert.ok(!/OLIBANA_|secret|token|key=/i.test(body), 'the page mentions configuration');
+  // It still tells the visitor the one thing they need: no money moved.
+  assert.match(body, /no payment was taken/i);
+});
+
+test('the internal error page carries the same security headers as every other response', async () => {
+  // Environment drift on the error path is the worst place to have it: it is
+  // the response most likely to be produced by a defect, and the one a checker
+  // looks at last. The local server used to answer a bare text/plain 500 with
+  // no headers at all while the deployment answered something else entirely.
+  const response = internalError();
+  for (const [header, value] of Object.entries(SECURITY_HEADERS)) {
+    assert.equal(response.headers.get(header), value, `the 500 page is missing ${header}`);
+  }
+  assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+});
+
+test('the error page needs no store, no configuration and no build output', async () => {
+  // Any of those may be what threw. A boundary that depends on the thing it is
+  // catching for is not a boundary — it is a second place to fail.
+  //
+  // Asserted by calling it with nothing at all: it takes no arguments, so there
+  // is no state it could consult.
+  assert.equal(internalError.length, 0);
+  const first = await internalError().text();
+  const second = await internalError().text();
+  assert.equal(first, second, 'the page varies with something it should not read');
+});
+
+test('a store that throws produces the error page, not a leaked exception', async () => {
+  // The end-to-end shape of the boundary, exercised through the real router:
+  // a store that fails in an unforeseen way must not escape as an exception
+  // whose message reaches a visitor.
+  class Exploding implements LogStorage {
+    readonly location = 'a store that fails unexpectedly';
+    read(): never { throw new Error('SECRET_PATH=/var/olibana/orders.jsonl'); }
+    append(): never { throw new Error('SECRET_PATH=/var/olibana/orders.jsonl'); }
+    truncate(): never { throw new Error('SECRET_PATH=/var/olibana/orders.jsonl'); }
+    withLock<R>(work: () => R): R { return work(); }
+  }
+  const o = options({ stores: { ...stores(), orders: new OrderStore(new Exploding()) } });
+
+  // The router handles this one itself (503, added after the deployment
+  // auditor found a 500 reaching a customer who had just paid). What matters
+  // here is that the secret in the exception never reaches the response.
+  const response = await handleRequest(o, new Request(`https://olibana.test${CONFIRMATION_PATH}?ref=x`));
+  const body = await response!.text();
+  assert.ok(!body.includes('SECRET_PATH'), 'an exception message reached the visitor');
+  assert.ok(!body.includes('/var/olibana'), 'a filesystem path reached the visitor');
 });

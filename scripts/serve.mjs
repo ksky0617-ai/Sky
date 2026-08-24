@@ -24,7 +24,7 @@ import { UnconfiguredGateway } from '../src/checkout/checkout.ts';
 import { IntentStore } from '../src/checkout/intents.ts';
 import { HmacWebhookVerifier, SandboxGateway } from '../src/checkout/sandbox.ts';
 import { validateEnvironment } from '../src/http/environment.ts';
-import { handleRequest, UnconfiguredVerifier } from '../src/http/router.ts';
+import { handleRequest, internalError, UnconfiguredVerifier } from '../src/http/router.ts';
 import { OrderStore } from '../src/order/store.ts';
 import { PreorderRunStore } from '../src/preorder/run.ts';
 import { CATALOG_PATH, RUNS_PATH } from '../src/site/routes.ts';
@@ -127,11 +127,16 @@ const server = createServer((req, res) => {
       'content-type': types[extname(file)] ?? 'application/octet-stream',
     });
     res.end(readFileSync(file));
-  })().catch((error) => {
-    // Nothing is hidden: an unexpected failure here is a defect, not a page.
+  })().catch(async (error) => {
+    // The same page the deployment serves, from the same function. This used to
+    // be a bare text/plain 500 with no security headers — so the one response
+    // most likely to be produced by a defect was also the one response that
+    // differed most between local and deployed. Environment drift on the error
+    // path is the worst place to have it: it is where a checker looks last.
     console.error(error);
-    res.writeHead(500, { 'content-type': 'text/plain' });
-    res.end('internal error');
+    const response = internalError();
+    res.writeHead(response.status, Object.fromEntries(response.headers));
+    res.end(Buffer.from(await response.arrayBuffer()));
   });
 });
 

@@ -391,6 +391,29 @@ await check('the webhook refuses a payload with a forged signature', async () =>
   return { expected: 400, observed: response.status };
 });
 
+await check('an internal failure does not leak the system to whoever caused it', async () => {
+  // The error path is the response most likely to be produced by a defect and
+  // the one a checker looks at last. A deployment whose 500 carries a stack
+  // trace, a filesystem path or a configuration variable has handed its shape
+  // to anyone who can make it fail — and making it fail is usually easier than
+  // reading it. Probed by a request built to be awkward rather than by causing
+  // real damage: nothing here writes.
+  const probes = ['/order/confirmation?ref=' + '%'.repeat(3), '/health/../../etc', '/checkout?x=' + 'a'.repeat(4000)];
+  const leaks = [];
+  let worst = 0;
+  for (const path of probes) {
+    const response = await get(path).catch(() => null);
+    if (response === null) continue;
+    worst = Math.max(worst, response.status);
+    const body = await response.text().catch(() => '');
+    for (const pattern of [/\bat [\w.]+ \(/, /\.ts:\d+/, /node_modules/, /OLIBANA_[A-Z_]+/, /\/(home|var|usr|root)\//]) {
+      if (pattern.test(body)) leaks.push(`${path} -> ${pattern}`);
+    }
+  }
+  expect(leaks.length === 0, `an error response leaked internals: ${leaks.join(', ')}`, { leaks });
+  return { expected: 'no stack, no path, no configuration name', observed: `worst status ${worst}, no leak` };
+});
+
 await check('the sandbox is not exposed', async () => {
   const response = await get('/sandbox/pay?ref=audit');
   expect(

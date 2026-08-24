@@ -56,6 +56,8 @@ interface Fault {
   readonly validCheckoutStatus?: number;
   /** Whether a forged signature is accepted. */
   readonly acceptForgedWebhook?: boolean;
+  /** What an error response leaks. */
+  readonly leakOnError?: string;
 }
 
 /**
@@ -134,6 +136,7 @@ function deployment(fault: Fault = {}): Promise<{ origin: string; close: () => P
     if (['/nature', '/olibana/philosophy', '/legal/accessibility'].includes(url.pathname)) {
       return send(200, '<main>a page</main>');
     }
+    if (fault.leakOnError !== undefined) return send(500, fault.leakOnError);
     return send(fault.notFoundStatus ?? 404, 'not found');
   });
 
@@ -301,6 +304,21 @@ test('it fails when the webhook accepts an unsigned payload', async () => {
 
   assert.notEqual(result.code, 0, 'a webhook accepting unsigned payloads was verified');
   assert.match(result.output, /an unsigned webhook produced 200/);
+});
+
+test('it fails when an error response leaks a stack trace or a path', async () => {
+  // The response most likely to be produced by a defect, and the one a checker
+  // looks at last. A deployment that answers a malformed request with its own
+  // internals has handed its shape to whoever can make it fail.
+  for (const leak of [
+    'Error: boom\n    at handleRequest (/home/user/Sky/src/http/router.ts:12:9)',
+    'ENOENT: no such file or directory, open \'/var/olibana/orders.jsonl\'',
+    'OLIBANA_WEBHOOK_SECRET is not set',
+  ]) {
+    const result = await auditFaulty({ leakOnError: leak });
+    assert.notEqual(result.code, 0, `a deployment leaking "${leak.slice(0, 30)}" was verified`);
+    assert.match(result.output, /leaked internals/);
+  }
 });
 
 // --- §12: /health says ok, but the thing it reports on is broken ---------

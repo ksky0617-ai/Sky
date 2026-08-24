@@ -9,6 +9,25 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-24-023 · V1 + V3 + V4 · The failure nobody planned for
+
+| | |
+| --- | --- |
+| **Target** | `src/http/router.ts`, `functions/[[path]].ts`, `scripts/serve.mjs`, `scripts/smoke-test.mjs`, `test/http/router.test.ts`, `test/http/deployment.test.ts`, `test/meta/deploy-audit.test.ts` |
+| **Bottleneck selected** | Continuing the 03 sweep. §2 lists `/500` as a System route and §3 marks it ✅ ready in the MVP-0 table. It did not exist — and neither did anything that would serve it. |
+| **Defect 1: the deployment had no error boundary at all** | `onRequest` called `optionsFor` and `handleRequest` with nothing around them. Anything that threw escaped to Cloudflare, which answers with **its own error page: no security headers, no `referrer-policy`, and content this project does not control on a domain carrying its name.** Not a remote path — `validateEnvironment` throws by design on a half-configured deployment, which is the most likely state of a first deploy. |
+| **Defect 2: the local 500 and the deployed 500 were different systems** | `serve.mjs` answered a bare `text/plain` "internal error" with **no security headers**. The response most likely to be produced by a defect was also the one that differed most between local and deployed — environment drift on the error path, which is where a checker looks last. Both now render the same `internalError()` from the same function. |
+| **What the page says** | Nothing about the error. No message, no stack, no identifier: it is rendered by code that just failed, on a request that may be hostile, and an error string is the most reliable way to hand an attacker the shape of a system. It takes no arguments and reads no store, configuration or build output — any of which may be what threw. A boundary that depends on the thing it is catching for is a second place to fail. |
+| **A test rewritten, and why that is a strengthening not a weakening** | `deployment.test.ts` asserted `onRequest` **rejects** on a half-configuration. That was the weaker requirement: an exception escaping the function does not refuse a request, it delegates the refusal to the platform. The requirement is that it does not serve the site, which is now asserted directly — 500, `referrer-policy: no-referrer`, **`ASSETS.calls === 0`** (a refusal that still hands the request to the asset server has refused nothing), and no configuration variable named in the body. `validateEnvironment` still throws; that is asserted in the same test, so what it protects is unchanged. |
+| **Auditor extended** | New check: a deployment that leaks internals on an error response fails. Three faulty deployments — a stack trace with a repository path, an `ENOENT` naming a log file, and a message naming `OLIBANA_WEBHOOK_SECRET` — each required to fail by name. Coverage 20 → 21 false deployments. |
+| **Executed against a real deployment** | Fixture server, three awkward requests (a malformed percent-escape, a traversal attempt, a 4KB query string): **18 passed · 0 failed · 0 unverified, exit 0.** |
+| **Limitation, stated rather than glossed** | Those probes did not actually provoke a 500 from the real server — worst observed status was 404, so what the run verified is that nothing leaked, not that a 500 is safe. The 500 page's own contents are covered at unit level and a leaking deployment is covered by the auditor's mutation cases; **no run has yet observed this system produce a genuine 500 in production.** That needs a deployment. |
+| **Observed** | 378/378 pass (from 372). |
+| **Result** | **PASS.** |
+| **Commit** | written against `9886025` |
+
+---
+
 ## V-2026-08-24-022 · V0 + V1 + V3 + V4 · The layer system: making the descending motion budget real and provable
 
 | | |

@@ -172,6 +172,41 @@ function page(status: number, title: string, body: string, mode: 'frictionless' 
 }
 
 /**
+ * The page for a failure nobody planned for.
+ *
+ * 03_INFORMATION_ARCHITECTURE.md §2 lists `/500` as a System route and §3
+ * marks it ready. It did not exist, and neither did anything that would serve
+ * it: the Pages function had **no error boundary at all**, so an unexpected
+ * throw returned the platform's own error page — no security headers, no
+ * brand, and whatever detail the platform chose to include. That is not a
+ * hypothetical path. `validateEnvironment` throws by design on a
+ * half-configured deployment, which is exactly the state a first deploy is
+ * most likely to be in.
+ *
+ * ## It says nothing about the error
+ *
+ * No message, no stack, no identifier. The page is rendered by the same code
+ * that just failed, on a request that may be hostile, and an error string is
+ * the most reliable way to hand an attacker the shape of the system. The
+ * operator's copy goes to the log; the visitor gets a page.
+ *
+ * ## It depends on nothing
+ *
+ * No store, no configuration, no build output — any of which may be what
+ * threw. Everything it needs is in this function.
+ */
+export function internalError(): Response {
+  return page(
+    500,
+    'Something went wrong on our side',
+    '<p>This is a fault here, not with anything you did. Nothing you were doing has been ' +
+      'charged or recorded.</p><p>Trying again shortly is the best thing to do. If you were ' +
+      'part-way through an order, no payment was taken.</p>',
+    'reassuring',
+  );
+}
+
+/**
  * The idempotency key for a submission. Stable for one customer's one
  * selection; different for anyone else's. See the note at the top of the file
  * for why it is not a nonce.

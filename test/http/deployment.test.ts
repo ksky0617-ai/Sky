@@ -18,7 +18,7 @@ import { resolve } from 'node:path';
 
 import { Catalog, variant } from '../../src/catalog/catalog.ts';
 import { signWebhook, type SignedWebhook } from '../../src/checkout/sandbox.ts';
-import { EnvironmentInvalid } from '../../src/http/environment.ts';
+import { EnvironmentInvalid, validateEnvironment } from '../../src/http/environment.ts';
 import { CHECKOUT_PATH, CONFIRMATION_PATH, SANDBOX_PATH, WEBHOOK_PATH } from '../../src/http/router.ts';
 import { IntentStore } from '../../src/checkout/intents.ts';
 import { OrderStore } from '../../src/order/store.ts';
@@ -34,13 +34,23 @@ test.after(() => rmSync(dir, { recursive: true, force: true }));
 
 const SECRET = 'a-deployment-secret-x';
 
-/** Stands in for the platform's static asset server. */
+/**
+ * Stands in for the platform's static asset server.
+ *
+ * Counts what it was asked for, so a test can assert the site was NOT served —
+ * a refusal that still hands the request to the asset server has refused
+ * nothing.
+ */
 const ASSETS = {
-  fetch: (request: Request) =>
-    Promise.resolve(new Response(`static:${new URL(request.url).pathname}`, { status: 200 })),
+  calls: 0,
+  fetch(request: Request) {
+    ASSETS.calls += 1;
+    return Promise.resolve(new Response(`static:${new URL(request.url).pathname}`, { status: 200 }));
+  },
 };
 
 function environment(overrides: Record<string, string | undefined> = {}): Record<string, string | undefined> & { ASSETS: typeof ASSETS } {
+  ASSETS.calls = 0;
   const id = n++;
   const catalogPath = resolve(dir, `cat-${id}.jsonl`);
   const runsPath = resolve(dir, `runs-${id}.jsonl`);
@@ -102,12 +112,48 @@ test('with no configuration the deployment is closed, and says so', async () => 
 
 test('a half-configured deployment refuses to serve rather than serving half', async () => {
   // Serving in whichever half was configured is the silent failure this exists
-  // to prevent, so the adapter throws instead of falling back to closed.
+  // to prevent. `validateEnvironment` still throws — that has not changed.
+  //
+  // What changed is where the throw lands. This test used to assert that
+  // `onRequest` REJECTS, and that was the weaker requirement: an exception
+  // escaping the function does not refuse the request, it delegates the refusal
+  // to Cloudflare, which answers with its own error page — no security headers,
+  // no `referrer-policy`, and content this project does not control on a domain
+  // carrying its name. A half-configured deploy is the most likely state of a
+  // first deployment, so that was not a remote path.
+  //
+  // The requirement is that it does not serve the site. That is asserted
+  // directly now, and the refusal is one this system emits.
   const env = environment({ OLIBANA_MODE: 'live' });
-  await assert.rejects(
-    () => onRequest({ request: get('/'), env }),
-    EnvironmentInvalid,
-  );
+  const response = await onRequest({ request: get('/'), env });
+  const body = await response.text();
+
+  assert.equal(response.status, 500);
+  assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+  assert.equal(env.ASSETS.calls, 0, 'a half-configured deployment served the site');
+  assert.ok(!body.includes('OLIBANA_'), 'the page named a configuration variable');
+  assert.ok(!/EnvironmentInvalid|webhook|secret/i.test(body), 'the page leaked the reason');
+
+  // And the underlying refusal is unchanged: the validator still throws.
+  assert.throws(() => validateEnvironment(env), EnvironmentInvalid);
+});
+
+test('the boundary catches everything, not merely the errors it expects', async () => {
+  // A boundary that re-throws some errors is a boundary with a hole, and the
+  // one thing known about an unexpected error is that nobody predicted its
+  // shape. Driven through the platform binding, which is the layer the
+  // function cannot control.
+  const env = environment();
+  const exploding = {
+    ...env,
+    ASSETS: { fetch(): never { throw new TypeError('platform binding failed: /var/secret/path'); } },
+  };
+  const response = await onRequest({ request: get('/nature'), env: exploding });
+  const body = await response.text();
+
+  assert.equal(response.status, 500);
+  assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+  assert.ok(!body.includes('/var/secret/path'), 'an exception message reached the visitor');
 });
 
 test('the sandbox is unreachable unless the deployment is a sandbox', async () => {
