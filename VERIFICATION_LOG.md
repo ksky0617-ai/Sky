@@ -9,6 +9,26 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-24-027 · V0 + V1 + V3 + V4 · The media contract, and the first image
+
+| | |
+| --- | --- |
+| **Target** | `src/site/media.ts` (new), `src/site/specimen.ts` (new), `src/site/build.ts`, `scripts/serve.mjs`, `scripts/visual-check.mjs`, `test/site/media.test.ts` (new) |
+| **The constraint this cycle turned on** | The instruction was to implement imagery with real assets. **The repository contains zero image files** — searched, not assumed. No garment has been made, so none has been photographed, and a generated or stock image standing in for a coat is not a placeholder but a depiction of a product that does not exist (02 §7, automatic rejection). So no photography was invented, and GATE-005 records why. |
+| **What could honestly be shown** | The construction palette and the type scale — real, because they are the values the page is served in. A specimen of them is not a picture standing in for something absent; it is the thing itself. **Generated from the tokens**, so a palette change changes the image or the build fails: a hand-drawn SVG with the same hex values would be the second-copy-that-agrees-today failure this repository has now hit with motion tokens, with the search index, and with the router's own type scale. |
+| **Built with exactly one real caller, deliberately** | `MediaAsset` requires `alt` and integer intrinsic dimensions **in the type**, so an inaccessible or layout-shifting image cannot be constructed. A media system with no caller would have repeated the precise mistake of the last three cycles — code that looks finished and runs nowhere. |
+| **Defect 1, and the reason the check exists at all** | The image **did not render**. `scripts/serve.mjs` had no MIME type for `.svg`, so it served `application/octet-stream`, and the site's own (correct) `nosniff` header made the browser refuse it. The page looked right: the box was reserved, CLS stayed 0.00, and the alt text filled the space. Only asking the browser for `naturalWidth` found it — that measurement was added in this cycle and caught the defect on its first run. An unmapped extension now logs rather than falling through in silence. |
+| **Defect 2, found by a screenshot and by nothing else** | In dark mode the labels were black on a #1A1A1A ground and the `--construct-900` swatch was invisible against a page of exactly its own colour. Cause: **an SVG loaded through `<img>` is an independent document and inherits nothing**, so `fill="currentColor"` resolved to its own default. Every automated check passed — the file loaded, and page-level contrast measurement does not look inside an image. The specimen now carries its own `prefers-color-scheme` stylesheet (**17.4:1** daylight, **15.55:1** dusk, measured) and every swatch a hairline, because two of the six ARE a ground colour. |
+| **A test of mine that was simply wrong** | One asserted the specimen *should* use `currentColor`. The dark-mode screenshot disproved it. Inverted, with the reason recorded in the test rather than in a commit message nobody reads at the failure site. |
+| **A measurement error of mine, caught before it became a fix** | The ratio-drift check compared `getBoundingClientRect()` (includes the 1px border) against `naturalWidth` (does not) and reported a 0.03 drift at mobile that was entirely the hairline. Fixed by measuring the content box — **not** by raising the threshold, which is how a real drift gets through later. |
+| **Mutation — 5 planted, 5 killed, one after a repair** | M1 alt no longer required → 1. M2 intrinsic dimensions no longer required → 1. M3 specimen back to `currentColor` → 2. M4 only the white swatch outlined → 1. **M5 dropped the specimen from the production guard and SURVIVED** — the stylesheet also carries construction tokens, so the guard still threw for the stylesheet's reason. An equivalent mutant today and a hole the day the brand palette lands and the stylesheet is cleaned, at which point the specimen becomes the only artifact carrying them. `productionArtifacts()` now names the coupling and a test asserts it; M5 re-run is killed. |
+| **Executed** | 430/430 tests (from 414). **66 browser renders** — 11 routes × 3 viewports × 2 colour schemes — exit 0. Image: declared 960×320, **natural 960×320**, rendered 692×232 desktop / 358×121 mobile, ratio drift 0.000, **CLS 0.00**, payload 37.1KB against a 120KB budget, 0 scripts. Motion budget unchanged: **L1 9 → L2 3 → L3 1**. |
+| **Result** | **PASS** for the media contract. |
+| **Gates** | **GATE-005 added — product photography, BLOCKED_EXTERNAL.** GATE-004 (Atlas field data) unchanged, 0 rows, not fabricated. GATE-001/002/003 unchanged. |
+| **Commit** | written against `73a58ca` |
+
+---
+
 ## V-2026-08-24-026 · V0 + V1 + V3 + V4 · Cross-layer contract verification
 
 | | |

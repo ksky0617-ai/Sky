@@ -23,6 +23,8 @@ import { PreorderRunStore, preorderWindow, type PreorderWindow } from '../preord
 import { FileStorage } from '../persistence/file-storage.ts';
 import { DEFAULT_LOCALE, enabledLocales, localePath } from './locales.ts';
 import { indexAtlas, indexPage, indexProduct, type SearchDocument } from './search.ts';
+import { renderFigure } from './media.ts';
+import { specimenAsset } from './specimen.ts';
 
 export interface Route {
   /** URL path. */
@@ -283,6 +285,11 @@ function designLanguagePage(): Route {
     section('Design_System.md', 'Unified Design Language'),
     '<h2>Evaluation criteria</h2>',
     section('Design_System.md', 'Evaluation Criteria'),
+    // The one image on this site, and the only one that can be true today.
+    // Placed here rather than on the home page because this is the page ABOUT
+    // the design system: a specimen belongs beside the thing it specifies.
+    // Not lazy — it is the page's primary visual and sits near the top.
+    renderFigure(specimenAsset(), { lazy: false }),
   ].join('\n');
 
   return {

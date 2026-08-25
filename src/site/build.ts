@@ -19,6 +19,7 @@ import { headersFile } from './headers.ts';
 import { renderDocument, renderRobots, renderSitemap } from './layout.ts';
 import { buildRoutes, navigation } from './routes.ts';
 import { findConstructionTokens, stylesheet } from './styles.ts';
+import { SPECIMEN_PATH, specimenSvg } from './specimen.ts';
 
 export interface BuildOptions {
   readonly outDir: string;
@@ -36,6 +37,22 @@ export interface BuildResult {
 }
 
 export class ProductionGuardError extends Error {}
+
+/**
+ * Everything a production build must be checked against for the construction
+ * palette.
+ *
+ * Named rather than inlined because the coupling is the point. A mutation that
+ * dropped the specimen from this list survived: the stylesheet ALSO carries
+ * `--construct-` tokens, so the guard still threw — for the stylesheet's
+ * reason, not the specimen's. It is an equivalent mutant today and a hole the
+ * day the brand palette lands and the stylesheet is cleaned, at which point the
+ * specimen becomes the only artifact carrying the construction values and a
+ * stylesheet-only guard would let the palette ship as a picture of itself.
+ */
+export function productionArtifacts(): Readonly<Record<string, string>> {
+  return { 'styles.css': stylesheet, [SPECIMEN_PATH]: specimenSvg() };
+}
 
 /** A link on a built page that points at an address the build did not emit. */
 export class DeadLinkError extends Error {}
@@ -83,7 +100,10 @@ export function findDeadLinks(pages: ReadonlyMap<string, string>, addresses: Rea
 
 export function build({ outDir, production = false, origin = '', catalogPath, runsPath }: BuildOptions): BuildResult {
   if (production) {
-    const leaked = findConstructionTokens(stylesheet);
+    // Every emitted artifact, not only the stylesheet. See productionArtifacts.
+    const leaked = [...new Set(
+      Object.values(productionArtifacts()).flatMap((source) => findConstructionTokens(source)),
+    )].sort();
     if (leaked.length > 0) {
       throw new ProductionGuardError(
         `construction palette present, production build refused: ${leaked.join(', ')}\n` +
@@ -123,6 +143,9 @@ export function build({ outDir, production = false, origin = '', catalogPath, ru
 
   const pages = new Map<string, string>();
   emit('styles.css', stylesheet);
+  // The design-system specimen. Generated from the tokens rather than drawn
+  // beside them, so it cannot describe a palette the site is not served in.
+  emit(SPECIMEN_PATH.replace(/^\//, ''), specimenSvg());
   for (const route of routes) {
     const html = renderDocument({ route, nav, stylesheetHref: '/styles.css', build });
     pages.set(route.path, html);
@@ -139,7 +162,7 @@ export function build({ outDir, production = false, origin = '', catalogPath, ru
   // the HTML that will actually be served.
   const addresses = new Set<string>([
     ...routes.map((r) => r.path),
-    '/styles.css', '/sitemap.xml', '/robots.txt', '/favicon.ico',
+    '/styles.css', '/sitemap.xml', '/robots.txt', '/favicon.ico', SPECIMEN_PATH,
   ]);
   const dead = findDeadLinks(pages, addresses);
   if (dead.length > 0) {

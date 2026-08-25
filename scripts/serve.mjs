@@ -62,10 +62,41 @@ const options = configured.mode === 'sandbox'
         : new UnconfiguredVerifier(),
     };
 
+/* Content types for what this site emits.
+
+   `.svg` was missing, so the one image on the site was served as
+   application/octet-stream — and because the security headers correctly set
+   `nosniff`, the browser refused it. The page still LOOKED right: the box was
+   reserved, CLS stayed 0.00, and the alt text filled the space. Only asking the
+   browser for the image's naturalWidth found it, which is why that measurement
+   now exists.
+
+   An unmapped extension logs rather than falling through to octet-stream in
+   silence, because the next asset type this site gains breaks the same way. */
 const types = {
-  '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.xml': 'application/xml', '.txt': 'text/plain; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.woff2': 'font/woff2',
+  '.json': 'application/json; charset=utf-8',
 };
+
+/** The content type for a file, or a loud fallback for an extension nobody mapped. */
+function contentTypeFor(file) {
+  const type = types[extname(file)];
+  if (type === undefined) {
+    console.error(`no content type mapped for "${extname(file)}" — it will not render`);
+    return 'application/octet-stream';
+  }
+  return type;
+}
 
 /**
  * Applies the built `_headers` file to static responses.
@@ -124,7 +155,7 @@ const server = createServer((req, res) => {
     }
     res.writeHead(200, {
       ...STATIC_HEADERS,
-      'content-type': types[extname(file)] ?? 'application/octet-stream',
+      'content-type': contentTypeFor(file),
     });
     res.end(readFileSync(file));
   })().catch(async (error) => {

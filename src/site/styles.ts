@@ -397,6 +397,28 @@ footer.site ul {
    tall at the footer's type size. */
 footer.site a { color: var(--content-secondary); display: inline-block; padding: 5px 0; }
 
+/* Media — the box is reserved before the image arrives.
+
+   No "aspect-ratio: attr(width) / attr(height)". attr() with a type is very
+   new and would silently do nothing in most browsers, which is the worst kind
+   of layout rule: it looks like the thing that prevents the shift while the
+   shift still happens. The width and height ATTRIBUTES already give every
+   modern browser the ratio before a single byte of the image arrives — that is
+   what actually reserves the box, and height:auto is what stops the height
+   attribute winning and distorting the image as the width flexes. */
+figure.media { margin: var(--space-8) 0; max-width: var(--measure); }
+figure.media img {
+  width: 100%; height: auto; display: block;
+  /* A file that fails to load leaves a reserved empty box rather than a broken
+     glyph. The hairline makes the space read as intentional. */
+  border: 1px solid var(--line-hairline);
+  background: var(--surface-base);
+}
+figure.media figcaption {
+  margin-top: var(--space-3);
+  color: var(--content-secondary); font-size: var(--text-sm);
+}
+
 /* ---------------------------------------------------------------------------
    Motion — 04_MOTION_LANGUAGE.md §3 (tokens), §6 (reduced motion), §9 (layers)
 

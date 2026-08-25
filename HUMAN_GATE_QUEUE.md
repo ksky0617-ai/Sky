@@ -80,6 +80,23 @@ one of them is either done or in [`POST_COMPLETION_QUEUE.md`](./POST_COMPLETION_
 | `RISK_IF_SKIPPED` | The brand's differentiating mechanism never ships. 03 §6 records that **all five** philosophy-to-commerce connections block on this same input — it is not one feature's dependency. |
 | `CURRENT_STATUS` | **BLOCKED_EXTERNAL** |
 
+## GATE-005 · Product photography
+
+| | |
+|---|---|
+| `GATE_ID` | GATE-005 |
+| `CLASS` | **BLOCKED_EXTERNAL.** Needs a garment and a camera. |
+| `REASON` | The site has no photography. No garment has been made, so none has been photographed. |
+| `WHY_AUTONOMOUS_EXECUTION_IS_IMPOSSIBLE` | A photograph of a coat requires the coat. A generated or stock image standing in for one is not a placeholder — it is a depiction of a product that does not exist, which 02 §7 lists under automatic rejection ("No production process depicted that does not occur") and which is the same class of claim as an invented measurement. |
+| `PRECONDITIONS` | GATE-002 and GATE-003 gate the first production run; the Fashion Specification is unwritten. Photography follows the garment, not the site. |
+| `WHAT_IS_ALREADY_COMPLETE` | The whole media path, exercised by a real asset rather than waiting for one. `MediaAsset` requires `alt` and intrinsic dimensions **in the type**, so an inaccessible or layout-shifting image cannot be constructed; `renderFigure` emits `loading`, `decoding`, and the width/height that reserve the box; the build emits the file and refuses a production build that would ship it; and `scripts/visual-check.mjs` reads the browser's `naturalWidth` to catch an image that is referenced but not rendering. |
+| `WHAT_IS_NOT_VERIFIED` | Anything specific to raster photography: `srcset`/`sizes` selection, `object-fit` cropping and focal point, and colour management. The one asset is vector, so those paths have no caller and are **not** written — the same reason the motion tokens and the search index sat unused for cycles is the reason they are absent rather than speculative. |
+| `POST_GATE_EXECUTION_PLAN` | Add the asset with its intrinsic dimensions and alt text · extend `MediaAsset` with `srcset` and a focal point · re-run the browser check across 11 routes × 3 viewports × 2 colour schemes, which will fail on any crop or ratio the page did not reserve. |
+| `VERIFICATION_AFTER_GATE` | Every image loads (`naturalWidth > 0`), CLS stays at 0.00, and the crop holds at all three viewports. |
+| `REVERSIBLE` | Yes. |
+| `RISK_IF_SKIPPED` | The site stays text-and-specimen. That is honest and it is thin — a garment brand is finally judged on how the garment looks. |
+| `CURRENT_STATUS` | **BLOCKED_EXTERNAL** |
+
 ---
 
 ## What is deliberately NOT here

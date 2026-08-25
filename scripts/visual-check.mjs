@@ -105,7 +105,41 @@ const routerOptions = {
   sandbox: { enabled: true, secret: SANDBOX_SECRET },
 };
 
-const types = { '.html': 'text/html', '.css': 'text/css', '.xml': 'application/xml', '.txt': 'text/plain' };
+/* Content types for what this site emits.
+
+   `.svg` was missing, so the one image on the site was served as
+   application/octet-stream — and because the security headers correctly set
+   `nosniff`, the browser refused it. The page still LOOKED right: the box was
+   reserved, CLS stayed 0.00, and the alt text filled the space. Only asking the
+   browser for the image's naturalWidth found it, which is why that measurement
+   now exists.
+
+   An unmapped extension logs rather than falling through to octet-stream in
+   silence, because the next asset type this site gains breaks the same way. */
+const types = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.xml': 'application/xml; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.woff2': 'font/woff2',
+  '.json': 'application/json; charset=utf-8',
+};
+
+/** The content type for a file, or a loud fallback for an extension nobody mapped. */
+function contentTypeFor(file) {
+  const type = types[extname(file)];
+  if (type === undefined) {
+    console.error(`no content type mapped for "${extname(file)}" — it will not render`);
+    return 'application/octet-stream';
+  }
+  return type;
+}
 const server = createServer((req, res) => {
   void (async () => {
     const chunks = [];
@@ -124,7 +158,7 @@ const server = createServer((req, res) => {
       res.writeHead(404, { 'content-type': 'text/html' });
       return res.end(readFileSync(resolve(root, '404.html')));
     }
-    res.writeHead(200, { 'content-type': types[extname(p)] ?? 'application/octet-stream' });
+    res.writeHead(200, { 'content-type': contentTypeFor(p) });
     res.end(readFileSync(p));
   })().catch((error) => {
     console.error(error);
@@ -143,6 +177,7 @@ const errors = [];
 const motionSeen = new Map();
 const layerMotion = new Map();
 const silenceSeen = [];
+const imagesSeen = [];
 // Every viewport in BOTH light states. The dusk palette had been defined since
 // the stylesheet was written and never once rendered, because nothing activated
 // it — so its contrast was unknown rather than acceptable. 05_VISUAL_SYSTEM.md
@@ -184,6 +219,9 @@ const routes = [
   // so they are where a reveal would strand content if one did.
   ['nature', '/en/nature'],
   ['philosophy', '/en/olibana/philosophy'],
+  // The one route carrying an image. Its aspect box, its contrast in both light
+  // states and its effect on CLS are the reason it is measured separately.
+  ['design-language', '/en/olibana/design-language'],
   // Deliberately short. A page that cannot scroll leaves every scroll-driven
   // timeline INACTIVE, which is the state a static check cannot reason about
   // and the one most likely to hold an element at its first keyframe.
@@ -353,6 +391,29 @@ for (const [name, path] of routes) {
               .map((el) => (el.textContent || '').trim().split(/\s+/).length),
           };
         })(),
+        images: [...document.querySelectorAll('img')].map((img) => ({
+          src: img.getAttribute('src'),
+          // complete && naturalWidth === 0 is a BROKEN image. A page can look
+          // fine with one if the alt text happens to fill the space.
+          broken: img.complete && img.naturalWidth === 0,
+          hasAlt: (img.getAttribute('alt') ?? '').trim() !== '',
+          declared: `${img.getAttribute('width')}x${img.getAttribute('height')}`,
+          natural: `${img.naturalWidth}x${img.naturalHeight}`,
+          rendered: `${Math.round(img.getBoundingClientRect().width)}x${Math.round(img.getBoundingClientRect().height)}`,
+          // The ratio the page reserved against the ratio the file actually is.
+          //
+          // clientWidth/clientHeight, NOT getBoundingClientRect: the bounding
+          // rect includes the border, naturalWidth does not, and comparing them
+          // reported a 0.03 ratio drift at mobile that was entirely the 1px
+          // hairline around the figure. A checker that measures two different
+          // boxes and calls the difference a defect is a checker that will be
+          // silenced by raising its threshold, which is how a real drift gets
+          // through later.
+          ratioDrift: img.naturalWidth === 0 ? null : Number(Math.abs(
+            (img.clientWidth / Math.max(img.clientHeight, 1)) -
+            (img.naturalWidth / img.naturalHeight)).toFixed(3)),
+          overflows: img.getBoundingClientRect().width > document.documentElement.clientWidth + 1,
+        })),
         lowContrast: [...new Set(lowContrast)],
         contrastUndetermined: [...document.querySelectorAll('main *, header *, footer *')]
           .filter((el) => ownText(el) && el.getClientRects().length > 0)
@@ -469,6 +530,20 @@ for (const [name, path] of routes) {
     if (layerOfRoute === '1' && m.silence.emptyShare < 0.4) {
       errors.push(`${id}: ${(m.silence.emptyShare * 100).toFixed(0)}% empty on a Layer 1 screen, under §5's 40%`);
     }
+    for (const img of m.images) {
+      if (img.broken) errors.push(`${id}: broken image ${img.src} (declared ${img.declared}, natural ${img.natural})`);
+      if (!img.hasAlt) errors.push(`${id}: image ${img.src} has no alt text`);
+      if (img.overflows) errors.push(`${id}: image ${img.src} is wider than the viewport`);
+      // A reserved box whose ratio differs from the file's is a box that will
+      // change size once the file arrives — the shift the dimensions exist to
+      // prevent, arriving anyway.
+      if (img.ratioDrift !== null && img.ratioDrift > 0.02) {
+        errors.push(`${id}: image ${img.src} renders at a different ratio than its file (drift ${img.ratioDrift})`);
+      }
+    }
+    if (m.images.length > 0) {
+      imagesSeen.push(`${id} ${m.images.map((i) => `${i.src?.split('/').pop()} ${i.rendered} nat=${i.natural}`).join(' ')}`);
+    }
     if (m.silence.offScale.length > 0) {
       // A hard failure, unlike the count below: §2 states this as a lint rule,
       // not a review threshold.
@@ -578,6 +653,7 @@ for (let i = 1; i < layers.length; i += 1) {
 }
 if (layers.length < 2) errors.push('only one layer was measured, so a descending budget is UNVERIFIED');
 
+console.log(`\nimages: ${imagesSeen.join(' | ') || 'none served'}`);
 console.log(`\nsilence budget (02 §5): ${silenceSeen.join(' | ')}`);
 
 console.log(errors.length > 0
