@@ -16,7 +16,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { extractSection, renderMarkdown, type DocumentRoutes } from './markdown.ts';
+import { escapeHtml, extractSection, renderMarkdown, type DocumentRoutes } from './markdown.ts';
 import { renderProductBody } from './product-page.ts';
 import { Catalog, type ProductRevision } from '../catalog/catalog.ts';
 import { PreorderRunStore, preorderWindow, type PreorderWindow } from '../preorder/run.ts';
@@ -24,6 +24,8 @@ import { FileStorage } from '../persistence/file-storage.ts';
 import { DEFAULT_LOCALE, enabledLocales, localePath } from './locales.ts';
 import { indexAtlas, indexPage, indexProduct, type SearchDocument } from './search.ts';
 import { renderFigure } from './media.ts';
+import { awaiting, note } from './states.ts';
+import { renderSiblings, renderTrail, siblings, trail } from './wayfinding.ts';
 import { specimenAsset } from './specimen.ts';
 
 export interface Route {
@@ -157,8 +159,10 @@ function atlasPage(atlas: AtlasSpec): Route {
   parts.push(
     rows > 0
       ? `<h2>Measurements</h2>${renderMarkdown(extractSection(source, 'Data Log') ?? '', documentRoutes())}`
-      : `<div class="state"><p>No field measurements have been recorded for this Atlas yet. ` +
-        `The method above is the work; the readings follow it.</p></div>`,
+      : awaiting(
+          'No field measurements',
+          'have been recorded for this Atlas. The method above is the work; the readings follow it.',
+        ),
   );
 
   return {
@@ -202,8 +206,11 @@ function homePage(): Route {
     ).join(''),
     '</ul>',
     '<h2>The collection</h2>',
-    '<div class="state"><p>No garment is offered for sale yet. The first is an outerwear piece, ' +
-      'and it will be offered as a pre-order with its production window stated before payment.</p></div>',
+    awaiting(
+      'No garment',
+      'is offered for sale yet. The first is an outerwear piece, and it will be offered as a ' +
+        'pre-order with its production window stated before payment.',
+    ),
   ].join('\n');
 
   return {
@@ -345,15 +352,27 @@ not the brand palette, and its contrast has not been validated.</p>
   };
 }
 
-function notFoundPage(): Route {
+function notFoundPage(destinations: readonly Route[]): Route {
   // Character_Bible.md v1.1 §5 — no wordplay, no metaphor, one route out.
+  //
+  // The routes are read from the manifest rather than listed here. The previous
+  // version named three by hand, which meant the page a reader lands on when
+  // an address is wrong was the one page guaranteed to go stale as the site
+  // grew — and it had already missed Design Language and the Atlases.
+  const links = destinations
+    .filter((route) => route.indexable !== false && route.basePath !== '/')
+    .map((route) =>
+      `<li><a href="${route.basePath}"><span class="index-title">${escapeHtml(route.title)}</span>` +
+      `<span class="index-note">${escapeHtml(route.description)}</span></a></li>`)
+    .join('');
+
   const body = `
 <h1>This page doesn't exist.</h1>
-<div class="lede"><p>The address may be mistyped, or the page may have been removed.</p></div>
+<div class="lede"><p>The address may be mistyped, or the page may have been removed.
+Everything the site currently holds is below.</p></div>
 <ul class="index">
-<li><a href="/"><span class="index-title">Home</span></a></li>
-<li><a href="/nature"><span class="index-title">Nature</span><span class="index-note">The four Atlases.</span></a></li>
-<li><a href="/olibana/philosophy"><span class="index-title">Philosophy</span></a></li>
+<li><a href="/"><span class="index-title">Olibana</span><span class="index-note">The entry to the world.</span></a></li>
+${links}
 </ul>`.trim();
 
   return {
@@ -449,8 +468,35 @@ function localiseBody(body: string, code: string, contentPaths: ReadonlySet<stri
     contentPaths.has(path) ? `href="${localePath(code, path)}"` : whole);
 }
 
+/**
+ * Prepends the trail and appends sibling navigation.
+ *
+ * Applied at localisation because both need the locale — a breadcrumb linking
+ * to `/nature` from a page at `/en/nature/river` would leave the locale, and
+ * that is the class of bug ADR-010 exists to prevent.
+ */
+function withWayfinding(route: Route, code: string, all: readonly Route[]): string {
+  // 03 §4 "Current location always indicated". The nav marks a section; it says
+  // nothing on a nested page, because River is not a nav item.
+  const labels = new Map(all.map((r) => [r.basePath, r.title]));
+  const steps = trail(route.basePath, labels);
+
+  // Siblings within a section: the routes sharing this one's parent path.
+  const parent = route.basePath.slice(0, route.basePath.lastIndexOf('/'));
+  const section = parent === ''
+    ? []
+    : all.filter((r) => r.basePath.startsWith(`${parent}/`) && r.basePath !== parent);
+  const { previous, next } = siblings(section, route.basePath);
+
+  return [
+    renderTrail(steps, route.title, code),
+    route.body,
+    renderSiblings(previous, next, code),
+  ].filter((part) => part !== '').join('\n');
+}
+
 /** Moves one route under a locale prefix. */
-function localise(route: Route, code: string, contentPaths: ReadonlySet<string>): Route {
+function localise(route: Route, code: string, contentPaths: ReadonlySet<string>, all: readonly Route[]): Route {
   const path = localePath(code, route.basePath);
   return {
     ...route,
@@ -458,7 +504,7 @@ function localise(route: Route, code: string, contentPaths: ReadonlySet<string>)
     path,
     // `/en/` -> `en/index.html`; `/en/nature` -> `en/nature/index.html`.
     file: `${code}/${route.file}`,
-    body: localiseBody(route.body, code, contentPaths),
+    body: localiseBody(withWayfinding(route, code, all), code, contentPaths),
     // The entry's url follows the page. An index pointing at the unprefixed
     // address would send every search result to a page that no longer exists
     // there.
@@ -503,7 +549,7 @@ export function buildRoutes(
   const contentPaths = new Set(base.map((r) => r.basePath));
 
   const localised = enabledLocales().flatMap((locale) =>
-    base.map((route) => localise(route, locale.code, contentPaths)));
+    base.map((route) => localise(route, locale.code, contentPaths, base)));
 
   /*
    * The locale-neutral addresses a static host needs.
@@ -543,7 +589,7 @@ function baseRoutes(
   const published = new Catalog(new FileStorage(catalogPath)).published();
   const runs = new PreorderRunStore(new FileStorage(runsPath));
 
-  return [
+  const pages = [
     homePage(),
     ...(published.length > 0 ? [shopPage(published)] : []),
     ...published.map((p) => {
@@ -555,8 +601,11 @@ function baseRoutes(
     philosophyPage(),
     designLanguagePage(),
     accessibilityPage(),
-    notFoundPage(),
   ];
+
+  // The 404 is built last, from everything above it, so it lists what the site
+  // actually holds rather than three addresses somebody typed once.
+  return [...pages, notFoundPage(pages)];
 }
 
 export function navigation(routes: readonly Route[]): ReadonlyArray<{ path: string; label: string }> {

@@ -397,6 +397,62 @@ footer.site ul {
    tall at the footer's type size. */
 footer.site a { color: var(--content-secondary); display: inline-block; padding: 5px 0; }
 
+/* Wayfinding — 03 §4 "Current location always indicated".
+
+   The trail sits above the h1 and is quiet: it is orientation, not content, and
+   a breadcrumb that competes with the page title has misread its own job. The
+   separator is a ::before rather than a character in the markup, so a screen
+   reader announces three items instead of "Olibana slash Nature slash". */
+nav.trail { margin: 0 0 var(--space-5); }
+nav.trail ol {
+  display: flex; flex-wrap: wrap; gap: var(--space-2);
+  list-style: none; margin: 0; padding: 0;
+  font-size: var(--text-sm); color: var(--content-secondary);
+}
+nav.trail li + li::before { content: "/"; margin-right: var(--space-2); color: var(--content-tertiary); }
+/* The same 24px AA target floor the primary navigation had to meet: these are
+   list links, not links inside a sentence, so SC 2.5.8's inline exception does
+   not apply to them either. */
+nav.trail a { color: var(--content-secondary); display: inline-block; padding: 4px 0; }
+nav.trail [aria-current="page"] { color: var(--content-primary); }
+
+/* Siblings — the route either side within a section. Grid rather than flex so
+   a lone "next" stays on the right where it belongs, held there by the empty
+   span the renderer emits for the missing side. */
+nav.siblings {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5);
+  margin: var(--space-11) 0 0; padding-top: var(--space-6);
+  border-top: 1px solid var(--line-hairline);
+}
+nav.siblings .sibling { display: block; text-decoration: none; padding: var(--space-3) 0; }
+nav.siblings .sibling-next { text-align: right; }
+nav.siblings .sibling-role {
+  display: block; font-size: var(--text-sm); letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--content-tertiary);
+}
+nav.siblings .sibling-title { color: var(--content-primary); }
+nav.siblings .sibling:hover .sibling-title { border-bottom: 1px solid var(--line-rule); }
+
+/* States — 02 §7's honesty block, given two shapes instead of one.
+
+   An ABSENCE and a NOTE looked identical, which made this site's gaps
+   indistinguishable from its footnotes on a site that has a lot of both. The
+   absence carries a left rule and the note does not, so the difference is
+   visible before the sentence is read. */
+.state-awaiting { border: 0; border-left: 2px solid var(--line-rule); padding: var(--space-2) 0 var(--space-2) var(--space-5); }
+.state-awaiting strong { color: var(--content-primary); font-weight: 500; }
+
+/* Where a photograph will go. The box is reserved at the 4:5 portrait crop a
+   garment is shot in, so the layout is the one the photograph lands in rather
+   than one that shifts when it arrives. It holds no picture: no garment has
+   been made, and a stand-in would depict a product that does not exist. */
+figure.media-absent { margin: var(--space-8) 0; max-width: 32rem; }
+.media-absent-box {
+  aspect-ratio: 4 / 5; width: 100%;
+  border: 1px dashed var(--line-hairline);
+  background: var(--surface-raised);
+}
+
 /* Media — the box is reserved before the image arrives.
 
    No "aspect-ratio: attr(width) / attr(height)". attr() with a type is very
@@ -604,6 +660,23 @@ figure.media figcaption {
 [data-mode="frictionless"] *,
 [data-mode="frictionless"] *::before,
 [data-mode="frictionless"] *::after {
+  animation-name: none !important;
+}
+
+/* §3's mode table gives Reassuring "Low", and the layer alone cannot express
+   that: the 404 and the confirmation sit on layers 2 and 3 beside pages that
+   are meant to move. So the mode REDUCES what the layer allows — it can never
+   add — and a recovery surface keeps the section entry and drops the list
+   stagger.
+
+   Measured, not assumed: rebuilding the 404 from the manifest took it from
+   three hand-written links to nine real ones, and the list reveal took Layer 2
+   to 11 animations against Layer 1's 9. The budget stopped descending, and the
+   check caught it on the run that introduced it. A page a reader reaches
+   because something went wrong is the last place to stagger nine items at
+   them. */
+[data-mode="reassuring"] .index li,
+[data-mode="reassuring"] .state {
   animation-name: none !important;
 }
 

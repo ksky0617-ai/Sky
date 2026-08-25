@@ -9,6 +9,26 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-24-028 · V0 + V1 + V3 + V4 · UI depth without new claims
+
+| | |
+| --- | --- |
+| **Target** | `src/site/wayfinding.ts` (new), `src/site/states.ts` (new), `src/site/routes.ts`, `src/site/styles.ts`, `test/site/ui.test.ts` (new) |
+| **Scope note — what was NOT built, and why** | The brief asked for a search interface with filtering and sorting. **03 §4 explicitly hides SEARCH in MVP-0**, and building it would contradict the locked IA. The §7 schema stays as §7 asks — defined before search is built. Loading states are also absent and stay absent: the site ships no JavaScript, so there is no interval during which a page is partly there. Inventing skeletons for it would be UI for a state that does not occur. |
+| **The gap that was real** | 03 §4 lists **"Current location always indicated"** as a navigation rule, and it was half met: the nav carries `aria-current`, so a reader on `/en/nature` knows where they are and a reader on `/en/nature/river` gets nothing — River is not a nav item. **Every nested route on the site had that gap.** Both the trail and the sibling links are now derived, from the path and from the manifest; a hand-written breadcrumb is a third copy of the hierarchy after the URL and the manifest, and it is the copy that goes stale because nothing breaks when it does. |
+| **A trail that refuses to invent an ancestor** | `/legal/accessibility` has no `/legal` page. A crumb linking to one would be a dead link with a plausible name, which is worse than no crumb — the reader trusts it and lands on a 404. Segments with no route contribute nothing. |
+| **Two states that had been one** | Five blocks used the same `.state` box for two meanings: *"no field measurements have been recorded"* (a fact about the world) and *"this is a pre-order, payment is taken when you order"* (an explanation). On a site with this many deliberate gaps, that made every gap indistinguishable from every footnote. `awaiting()` and `note()` are now different components with different shapes, and `awaiting()` takes the subject and the reason **separately** so an absence has to name what is missing. It has no `when` parameter and no way to add one without editing the file: "coming soon" and "expected in spring" are the two most common lies on an unfinished site, and 02 §7's honesty block rejects both. |
+| **The 404 was the page guaranteed to go stale** | It named three addresses by hand and had already missed Design Language and all four Atlases — the one page a reader reaches when an address is wrong. Built from the manifest now, so it lists what the site actually holds. |
+| **Defect found by measurement, in this cycle's own change** | Rebuilding the 404 from the manifest took it from three links to nine, and `.index li` carries the forest reveal on layers 1 and 2 — so **Layer 2 rose to 11 animations against Layer 1's 9 and the descending budget broke.** The check caught it on the run that introduced it. §3's mode table gives Reassuring "Low", which the layer alone cannot express: the 404 and the confirmation sit on layers 2 and 3 beside pages meant to move. A mode now **reduces** what a layer allows and can never add — asserted, so a reassuring rule that started an animation would fail. A page a reader reaches because something went wrong is the last place to stagger nine items at them. |
+| **Mutation — 5 planted, 5 killed** | M1 the trail invents an ancestor from a URL segment → 2. M2 the current page becomes a link to itself → 2. M3 sibling navigation reuses the animated `.index` class → 1. M4 absence and note share one box again → 2. M5 the reassuring reducer is dropped → 1. **M3 reported a kill on its first run without having applied** — a shell-escaping error in my own harness — and was re-run properly. That is the second time this has happened, and the lesson from cycle 26 held: every mutation confirms it applied before its result is read. |
+| **Executed** | 445/445 tests (from 430). **66 browser renders** — 11 routes × 3 viewports × 2 colour schemes — exit 0. No overflow, no unpainted text, no undersized target, no contrast failure in either light state, image still natural 960×320 with CLS 0.00. |
+| **Motion budget** | **L1 9 → L2 2 → L3 1.** Descending. L2 moved from 3 to 2 because the 404 previously contributed 3 and now correctly contributes 0 — the absolute numbers followed the content, the descent is the invariant and it holds. |
+| **Result** | **PASS.** More UI, no new claims: every added surface is derived from data the system already holds. |
+| **Gates unchanged** | GATE-004 Atlas field data — **0 rows**, nothing fabricated, not counted as complete. GATE-005 product photography — no image added; `absentPhotography()` reserves the box at the 4:5 portrait crop and holds no picture. GATE-001/002/003 unchanged. |
+| **Commit** | written against `5ba1e39` |
+
+---
+
 ## V-2026-08-24-027 · V0 + V1 + V3 + V4 · The media contract, and the first image
 
 | | |

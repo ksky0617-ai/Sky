@@ -92,7 +92,12 @@ test('Atlas pages disclose the absence of measurements instead of showing an emp
       resolve(import.meta.dirname, `../../${atlas[0]!.toUpperCase()}${atlas.slice(1)}_Atlas.md`), 'utf8',
     ));
     assert.equal(rows, 0, 'test assumes no field data yet — update this test when readings arrive');
-    assert.match(source, /No field measurements have been recorded/, `${atlas} hides the gap`);
+    // The disclosure, not one contiguous string: `awaiting()` wraps the subject
+    // in <strong>, so the sentence is split in the markup while saying exactly
+    // the same thing. Checked as "an awaiting state naming field measurements".
+    assert.match(source, /class="state state-awaiting"/, `${atlas} does not mark the gap as an absence`);
+    assert.match(source, /No field measurements/, `${atlas} hides the gap`);
+    assert.match(source, /have been recorded for this Atlas/, `${atlas} does not say what is missing`);
     assert.ok(!/<h2>Measurements<\/h2>/.test(source), `${atlas} shows an empty measurements table`);
   }
 });
