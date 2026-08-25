@@ -14,4 +14,5 @@ Each record states Context, Problem, Options, Decision, Reason, Trade-offs, and 
 | [ADR-006](./ADR-006-brand-direction-conflict.md) | Brand direction conflict: Vintage × Luxury × Y2K | **OPEN — conflict reported** | 2026-08-15 |
 | [ADR-007](./ADR-007-spec-conflict-cancelled-terminal.md) | Spec conflict — CANCELLED is not terminal | Accepted | 2026-08-15 |
 | [ADR-008](./ADR-008-idempotency-key-scope.md) | Idempotency key scope in a persistent store | Accepted | 2026-08-15 |
-| [ADR-010](./ADR-010-launch-locale-route-policy.md) | Launch locale route policy | Accepted | 03 §5 wants locale prefixes from launch, 03 §1 forbids routes that cannot be truthfully filled, and no translation exists. §5 is read as requiring locale-aware architecture, not fabricated translations: `en` ships, `ja` and `ko` are declared and disabled, and a disabled locale resolves to nothing rather than falling back to English. |
+| [ADR-009](./ADR-009-cart-absent-checkout-is-the-path.md) | No cart — selection is the checkout | Accepted | 2026-08-22 |
+| [ADR-010](./ADR-010-launch-locale-route-policy.md) | Launch locale route policy | Accepted | 2026-08-24 |

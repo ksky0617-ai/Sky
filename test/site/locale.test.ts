@@ -12,7 +12,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
@@ -311,4 +311,16 @@ test('§4.1 re-entry: 12 field records is the threshold, and none exist yet', ()
     readFileSync(resolve(import.meta.dirname, `../../${name}_Atlas.md`), 'utf8'),
   ), 0);
   assert.equal(total, 0, `${total} Atlas rows now exist — re-examine GATE-004 against the 12-row threshold`);
+});
+
+test('every ADR is listed in the index', () => {
+  // ADR-009 was absent for three cycles. The index is how a resuming session
+  // discovers which decisions are binding, so a decision missing from it is a
+  // decision that will be re-litigated or contradicted.
+  const dir = resolve(import.meta.dirname, '../../docs/adr');
+  const index = readFileSync(resolve(dir, 'README.md'), 'utf8');
+  const missing = readdirSync(dir)
+    .filter((f) => /^ADR-\d+/.test(f))
+    .filter((f) => !index.includes(f));
+  assert.deepEqual(missing, [], 'ADRs exist that the index does not list');
 });
