@@ -87,7 +87,7 @@ test('routes without content are absent, not empty', () => {
 
 test('Atlas pages disclose the absence of measurements instead of showing an empty table', () => {
   for (const atlas of ['river', 'stone', 'forest', 'light']) {
-    const source = html(`nature/${atlas}/index.html`);
+    const source = html(`en/nature/${atlas}/index.html`);
     const rows = countAtlasDataRows(readFileSync(
       resolve(import.meta.dirname, `../../${atlas[0]!.toUpperCase()}${atlas.slice(1)}_Atlas.md`), 'utf8',
     ));
@@ -125,10 +125,12 @@ test('the navigation does not repeat a destination the header already links to',
   // The wordmark links home. A nav item that also links home is two controls
   // for one destination — visible in a screenshot, invisible in the manifest.
   const nav = navigation(buildRoutes());
-  assert.ok(!nav.some((n) => n.path === '/'), 'the navigation duplicates the wordmark');
+  assert.ok(!nav.some((n) => n.path === '/en/'), 'the navigation duplicates the wordmark');
   for (const page of pages) {
     const header = /<header class="site">[\s\S]*?<\/header>/.exec(html(page))?.[0] ?? '';
-    const homeLinks = [...header.matchAll(/href="\/"/g)].length;
+    // ADR-010 moved the home address to `/en/`; the wordmark follows the page's
+    // own locale, so the count is of links to THIS page's home, not to `/`.
+    const homeLinks = [...header.matchAll(/href="\/en\/"/g)].length;
     assert.equal(homeLinks, 1, `${page} has ${homeLinks} links home in its header`);
   }
 });
@@ -145,13 +147,17 @@ test('the 404 page declares no canonical URL', () => {
   // It is served for addresses that do not exist, so it has no canonical
   // address of its own. A self-canonical alongside noindex is contradictory.
   assert.ok(!/rel="canonical"/.test(html('404.html')), '404 must not declare a canonical');
-  assert.match(html('index.html'), /<link rel="canonical" href="\/">/);
+  assert.ok(!/rel="canonical"/.test(html('en/404.html')), 'the locale 404 must not declare a canonical either');
+  // ADR-010: the locale-prefixed address is canonical; the root points at it.
+  assert.match(html('index.html'), /<link rel="canonical" href="\/en\/">/);
 });
 
 test('the sitemap lists indexable pages only, and 404 is marked noindex', () => {
   const sitemap = readFileSync(resolve(outDir, 'sitemap.xml'), 'utf8');
   assert.ok(!sitemap.includes('/404'), '404 must not be in the sitemap');
-  assert.equal((sitemap.match(/<url>/g) ?? []).length, result.routes.length - 1);
+  // ADR-010: the sitemap lists locale addresses only, so the two locale-neutral
+  // routes (`/` and `/404`) and the locale 404 are all absent from it.
+  assert.equal((sitemap.match(/<url>/g) ?? []).length, result.routes.length - 3);
   assert.match(html('404.html'), /<meta name="robots" content="noindex">/);
 });
 
@@ -244,7 +250,7 @@ test('page copy is read from the source documents, not duplicated', () => {
   assert.ok(philosophy && philosophy.length > 0);
   // A distinctive phrase from the document must appear on the rendered page.
   assert.match(html('index.html'), /traceable to a measurable structure found in nature/);
-  assert.match(html('olibana/philosophy/index.html'), /Structural Logic/);
+  assert.match(html('en/olibana/philosophy/index.html'), /Structural Logic/);
 });
 
 test('the build is deterministic', () => {

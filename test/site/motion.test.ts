@@ -350,11 +350,11 @@ test('every route declares its layer and mode', () => {
 test('layers match §3: commerce is Layer 3, the world is Layer 1', () => {
   const byPath = new Map(buildRoutes().map((r) => [r.path, r]));
   // §3 Layer 1 — WORLD: Home, Nature, Philosophy.
-  for (const path of ['/', '/nature', '/nature/river', '/olibana/philosophy']) {
+  for (const path of ['/en/', '/en/nature', '/en/nature/river', '/en/olibana/philosophy']) {
     assert.equal(byPath.get(path)?.layer, 1, `${path} is not Layer 1`);
   }
   // §3 Layer 2 — DESIGN.
-  assert.equal(byPath.get('/olibana/design-language')?.layer, 2);
+  assert.equal(byPath.get('/en/olibana/design-language')?.layer, 2);
 });
 
 test('every motion rule is scoped to a layer, so none applies site-wide', () => {
@@ -386,7 +386,7 @@ test('the frictionless mode is disabled at provider level, not per component', (
 
 test('a Layer 1 statement stays within the silence budget', () => {
   // §5: "Words in a Layer 1 statement block ≤ 25". Long-form belongs in Layer 2.
-  const home = buildRoutes().find((r) => r.path === '/');
+  const home = buildRoutes().find((r) => r.path === '/en/');
   const statements = [...(home?.body ?? '').matchAll(/<p class="statement">(.*?)<\/p>/gs)];
   assert.ok(statements.length > 0, 'the home portal has no statement block');
   for (const [, text] of statements) {

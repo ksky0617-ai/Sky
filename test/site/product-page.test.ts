@@ -42,17 +42,17 @@ test('THE CURRENT REPOSITORY publishes no product', () => {
   // real build must contain no shop and no product page. If a product is ever
   // recorded, this test changes deliberately — it cannot drift by accident.
   const paths = buildRoutes(CATALOG_PATH).map((r) => r.path);
-  assert.ok(!paths.includes('/shop'), '/shop was emitted with an empty catalogue');
+  assert.ok(!paths.includes('/en/shop'), '/shop was emitted with an empty catalogue');
   assert.deepEqual(paths.filter((p) => p.startsWith('/products/')), []);
 });
 
 test('a published product produces a shop and a product page', () => {
   const { out, files } = siteWith([fixture()]);
-  assert.ok(files.includes('shop/index.html'));
-  assert.ok(files.includes('products/olb-ct-001/index.html'));
-  const page = readFileSync(resolve(out, 'products/olb-ct-001/index.html'), 'utf8');
+  assert.ok(files.includes('en/shop/index.html'));
+  assert.ok(files.includes('en/products/olb-ct-001/index.html'));
+  const page = readFileSync(resolve(out, 'en/products/olb-ct-001/index.html'), 'utf8');
   assert.match(page, /<h1[^>]*>Test Coat<\/h1>/);
-  assert.match(readFileSync(resolve(out, 'shop/index.html'), 'utf8'), /Test Coat/);
+  assert.match(readFileSync(resolve(out, 'en/shop/index.html'), 'utf8'), /Test Coat/);
 });
 
 test('a non-published product reaches neither the shop nor a page', () => {
@@ -61,7 +61,7 @@ test('a non-published product reaches neither the shop nor a page', () => {
     variants: [variant('OLB-CT-001', 'STN', 'M', null)],
     productionLeadDays: null,
   })]);
-  assert.ok(!files.includes('shop/index.html'));
+  assert.ok(!files.includes('en/shop/index.html'));
   assert.deepEqual(files.filter((f) => f.startsWith('products/')), []);
 });
 
@@ -132,11 +132,11 @@ test('product content is escaped', () => {
 
 test('a product page passes the same structural checks as every other page', () => {
   const { out } = siteWith([fixture()]);
-  const page = readFileSync(resolve(out, 'products/olb-ct-001/index.html'), 'utf8');
+  const page = readFileSync(resolve(out, 'en/products/olb-ct-001/index.html'), 'utf8');
   assert.match(page, /^<!doctype html>/i);
   assert.equal((page.match(/<h1[ >]/g) ?? []).length, 1);
   assert.ok(!/<script/i.test(page));
-  assert.match(page, /<link rel="canonical" href="\/products\/olb-ct-001">/);
+  assert.match(page, /<link rel="canonical" href="\/en\/products\/olb-ct-001">/);
 });
 
 // --- the page and the pre-order run -------------------------------------
@@ -214,7 +214,7 @@ test('a built page carries the run\'s dates — the wiring, not the renderer', (
 
   const out = resolve(dir, `wired-out-${stamp}`);
   build({ outDir: out, catalogPath, runsPath });
-  const html = readFileSync(resolve(out, 'products/olb-ct-001/index.html'), 'utf8');
+  const html = readFileSync(resolve(out, 'en/products/olb-ct-001/index.html'), 'utf8');
 
   assert.match(html, /Closes 30 September 2026/, 'the build did not read the open run');
   assert.match(html, /dispatched by 1 December 2026/);
@@ -246,7 +246,7 @@ test('a closed run is not shown as if it were open', () => {
 
   const out = resolve(dir, `closed-out-${stamp}`);
   build({ outDir: out, catalogPath, runsPath });
-  const html = readFileSync(resolve(out, 'products/olb-ct-001/index.html'), 'utf8');
+  const html = readFileSync(resolve(out, 'en/products/olb-ct-001/index.html'), 'utf8');
 
   assert.ok(!/Closes 30 September 2026/.test(html), 'a closed run was offered as an open window');
   assert.match(html, /about 60 days after the order window closes/);
@@ -325,7 +325,7 @@ test('the built page carries the form, not just the renderer', () => {
 
   const out = resolve(dir, `form-out-${stamp}`);
   build({ outDir: out, catalogPath, runsPath });
-  const html = readFileSync(resolve(out, 'products/olb-ct-001/index.html'), 'utf8');
+  const html = readFileSync(resolve(out, 'en/products/olb-ct-001/index.html'), 'utf8');
   assert.match(html, /action="\/checkout"/, 'the build emitted no purchase form');
 });
 
@@ -337,7 +337,7 @@ test('the page still ships no JavaScript', () => {
   new Catalog(new FileStorage(catalogPath)).record(fixture());
   const out = resolve(dir, `js-out-${stamp}`);
   build({ outDir: out, catalogPath });
-  for (const file of ['index.html', 'products/olb-ct-001/index.html']) {
+  for (const file of ['index.html', 'en/products/olb-ct-001/index.html']) {
     const html = readFileSync(resolve(out, file), 'utf8');
     assert.ok(!/<script/i.test(html), `${file} ships JavaScript`);
     assert.ok(!/ on[a-z]+=/i.test(html), `${file} carries an inline event handler`);

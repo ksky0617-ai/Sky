@@ -171,14 +171,19 @@ await handleRequest(routerOptions, new Request(`http://127.0.0.1:${port}/sandbox
   }).toString(),
 }));
 
+// ADR-010: content lives under a locale prefix. `home` is the locale home, not
+// the site root — the root serves the same page but declares `/en/` canonical,
+// and it is the canonical address a reader is sent to.
 const routes = [
-  ['product', '/products/olb-ct-001'],
-  ['shop', '/shop'],
-  ['home', '/'],
+  ['product', '/en/products/olb-ct-001'],
+  ['shop', '/en/shop'],
+  ['home', '/en/'],
+  ['root', '/'],
+  ['disabled-locale', '/ja/'],
   // The Atlas index and a philosophy page carry the list and section motion,
   // so they are where a reveal would strand content if one did.
-  ['nature', '/nature'],
-  ['philosophy', '/olibana/philosophy'],
+  ['nature', '/en/nature'],
+  ['philosophy', '/en/olibana/philosophy'],
   // Deliberately short. A page that cannot scroll leaves every scroll-driven
   // timeline INACTIVE, which is the state a static check cannot reason about
   // and the one most likely to hold an element at its first keyframe.
@@ -196,7 +201,7 @@ for (const [name, path] of routes) {
     // own 404 is the correct answer and not a defect. Anything else it pulls in
     // still has to succeed.
     page.on('response', (r) => {
-      const expected404 = name === 'notfound' && new URL(r.url()).pathname === path;
+      const expected404 = ['notfound', 'disabled-locale'].includes(name) && new URL(r.url()).pathname === path;
       if (r.status() >= 400 && !expected404) errors.push(`${id}: ${r.status()} ${r.url()}`);
     });
     await page.goto(`http://127.0.0.1:${port}${path}`, { waitUntil: 'load' });

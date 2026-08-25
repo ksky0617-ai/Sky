@@ -62,6 +62,24 @@ one of them is either done or in [`POST_COMPLETION_QUEUE.md`](./POST_COMPLETION_
 | `REVERSIBLE` | Account closure is possible. **A real payment is not** — that is why it is last. |
 | `RISK_IF_SKIPPED` | No order can ever be paid for. Everything up to the gateway still works. |
 
+## GATE-004 · Atlas field measurement — the Rule Layer
+
+| | |
+|---|---|
+| `GATE_ID` | GATE-004 |
+| `CLASS` | **BLOCKED_EXTERNAL.** Not a credential and not a legal act — a person has to go and measure a river. |
+| `REASON` | 02_BRAND_EXPERIENCE_SYSTEM.md §4.1 specifies the Rule Layer as the brand's *primary signature*: a toggle that draws the measured rule over the garment it produced — a curvature radius, a fracture angle, a branching ratio, a colour temperature in Kelvin. **It renders only from real Atlas rows.** All four Atlases hold zero. |
+| `WHY_AUTONOMOUS_EXECUTION_IS_IMPOSSIBLE` | The required input is physical measurement of natural phenomena. No amount of code produces a river's meander radius. |
+| `CONSTRAINT` | **No numeric value may be invented.** §4.1 states its own failure condition: *"if it renders invented numbers, it must be removed entirely. A false drawing is worse than no drawing."* This is not a style rule — a brand whose premise is *forms derived from measured nature* cannot display an invented measurement and remain the same brand. |
+| `RESOLUTION` | **Removed from executable acceptance** until authoritative Atlas data is supplied. It is not counted as an unmet code criterion, and it is not counted as done. |
+| `WHAT_IS_ALREADY_COMPLETE` | The honesty is structural rather than remembered. `countAtlasDataRows` returns the number of REAL rows and drives both the page (no measurements section when zero) and the search index (`atlasSource: null` for an unmeasured Atlas), so the index and the page cannot disagree. `assertSearchDocument` refuses an entry carrying a `naturalRule` with no `atlasSource` behind it — a claim with no measurement behind it. |
+| `RE_ENTRY_CONDITION` | Authoritative Atlas field data is available **and its provenance is recorded** — what was measured, where, when, and with what. 03 §3 sets the threshold: **3 field records per Atlas, 12 total.** Below that `/nature` is a statement of intent; at or above it, `/nature` is evidence and the Rule Layer becomes possible. |
+| `POST_GATE_EXECUTION_PLAN` | Rows land in the Atlas documents → the measurements section renders itself → the search index gains real `atlasSource` values → the Rule Layer becomes implementable against data that exists. |
+| `VERIFICATION_AFTER_GATE` | Each drawn value traceable to a recorded row. A value with no row must fail the build, not merely fail review. |
+| `REVERSIBLE` | Yes. Measurements are additive. |
+| `RISK_IF_SKIPPED` | The brand's differentiating mechanism never ships. 03 §6 records that **all five** philosophy-to-commerce connections block on this same input — it is not one feature's dependency. |
+| `CURRENT_STATUS` | **BLOCKED_EXTERNAL** |
+
 ---
 
 ## What is deliberately NOT here

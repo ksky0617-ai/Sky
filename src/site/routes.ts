@@ -21,6 +21,7 @@ import { renderProductBody } from './product-page.ts';
 import { Catalog, type ProductRevision } from '../catalog/catalog.ts';
 import { PreorderRunStore, preorderWindow, type PreorderWindow } from '../preorder/run.ts';
 import { FileStorage } from '../persistence/file-storage.ts';
+import { DEFAULT_LOCALE, enabledLocales, localePath } from './locales.ts';
 
 export interface Route {
   /** URL path. */
@@ -56,6 +57,13 @@ export interface Route {
   readonly nav?: { readonly label: string; readonly order: number };
   /** Excluded from the sitemap (error pages). */
   readonly indexable?: boolean;
+  /** Which locale serves this route — ADR-010. */
+  readonly locale: string;
+  /**
+   * The unprefixed path this route was built from, kept so a locale-neutral
+   * address can point at its canonical localized one.
+   */
+  readonly basePath: string;
 }
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -137,6 +145,8 @@ function atlasPage(atlas: AtlasSpec): Route {
 
   return {
     path: `/nature/${atlas.slug}`,
+    basePath: `/nature/${atlas.slug}`,
+    locale: DEFAULT_LOCALE,
     layer: 1,
     mode: 'immersive',
     file: `nature/${atlas.slug}/index.html`,
@@ -175,6 +185,8 @@ function homePage(): Route {
 
   return {
     path: '/',
+    basePath: '/',
+    locale: DEFAULT_LOCALE,
     layer: 1,
     mode: 'immersive',
     file: 'index.html',
@@ -205,6 +217,8 @@ function naturePage(): Route {
 
   return {
     path: '/nature',
+    basePath: '/nature',
+    locale: DEFAULT_LOCALE,
     layer: 1,
     mode: 'immersive',
     file: 'nature/index.html',
@@ -227,6 +241,8 @@ function philosophyPage(): Route {
 
   return {
     path: '/olibana/philosophy',
+    basePath: '/olibana/philosophy',
+    locale: DEFAULT_LOCALE,
     layer: 1,
     mode: 'immersive',
     file: 'olibana/philosophy/index.html',
@@ -250,6 +266,8 @@ function designLanguagePage(): Route {
 
   return {
     path: '/olibana/design-language',
+    basePath: '/olibana/design-language',
+    locale: DEFAULT_LOCALE,
     layer: 2,
     mode: 'informative',
     file: 'olibana/design-language/index.html',
@@ -288,6 +306,8 @@ not the brand palette, and its contrast has not been validated.</p>
 
   return {
     path: '/legal/accessibility',
+    basePath: '/legal/accessibility',
+    locale: DEFAULT_LOCALE,
     layer: 2,
     mode: 'reassuring',
     file: 'legal/accessibility/index.html',
@@ -310,6 +330,8 @@ function notFoundPage(): Route {
 
   return {
     path: '/404',
+    basePath: '/404',
+    locale: DEFAULT_LOCALE,
     layer: 2,
     mode: 'reassuring',
     file: '404.html',
@@ -327,6 +349,8 @@ function productSlug(product: ProductRevision): string {
 function productPage(product: ProductRevision, run: PreorderWindow | null): Route {
   return {
     path: `/products/${productSlug(product)}`,
+    basePath: `/products/${productSlug(product)}`,
+    locale: DEFAULT_LOCALE,
     layer: 3,
     mode: 'informative',
     file: `products/${productSlug(product)}/index.html`,
@@ -339,6 +363,8 @@ function productPage(product: ProductRevision, run: PreorderWindow | null): Rout
 function shopPage(products: readonly ProductRevision[]): Route {
   return {
     path: '/shop',
+    basePath: '/shop',
+    locale: DEFAULT_LOCALE,
     layer: 3,
     mode: 'informative',
     file: 'shop/index.html',
@@ -376,7 +402,85 @@ export const RUNS_PATH = resolve(ROOT, 'data/preorder-runs.jsonl');
  *
  * Also absent: /journal (no article written), /contact (no address).
  */
+/**
+ * Rewrites the content links inside a page body for a locale.
+ *
+ * Only addresses that ARE content routes are touched. That precision is the
+ * point: a blanket rewrite of every `href="/…"` would also prefix `/checkout`
+ * and `/webhooks/payment`, which ADR-010 deliberately leaves unprefixed —
+ * prefixing a webhook endpoint by locale would be architecture for its own
+ * sake, and it would break the purchase path.
+ */
+function localiseBody(body: string, code: string, contentPaths: ReadonlySet<string>): string {
+  return body.replace(/href="(\/[^"#?]*)"/g, (whole, path: string) =>
+    contentPaths.has(path) ? `href="${localePath(code, path)}"` : whole);
+}
+
+/** Moves one route under a locale prefix. */
+function localise(route: Route, code: string, contentPaths: ReadonlySet<string>): Route {
+  const path = localePath(code, route.basePath);
+  return {
+    ...route,
+    locale: code,
+    path,
+    // `/en/` -> `en/index.html`; `/en/nature` -> `en/nature/index.html`.
+    file: `${code}/${route.file}`,
+    body: localiseBody(route.body, code, contentPaths),
+  };
+}
+
+/**
+ * Every route the build emits.
+ *
+ * ADR-010: content lives under a locale prefix, and only locales that have
+ * content are enabled. `/ja/` and `/ko/` are declared in the registry and
+ * produce no routes at all, so they 404 rather than serving English — which is
+ * the whole decision, since a fallback presented as localization is the lie the
+ * ADR exists to prevent.
+ *
+ * `/` also answers, serving the default locale's home with its canonical
+ * pointing at `/en/`. A static host cannot redirect without host-specific
+ * configuration, and a redirect present only on Cloudflare would make the local
+ * server and the deployment disagree about the site's most requested address.
+ */
 export function buildRoutes(
+  catalogPath: string = CATALOG_PATH,
+  runsPath: string = RUNS_PATH,
+): readonly Route[] {
+  const base = baseRoutes(catalogPath, runsPath);
+  const contentPaths = new Set(base.map((r) => r.basePath));
+
+  const localised = enabledLocales().flatMap((locale) =>
+    base.map((route) => localise(route, locale.code, contentPaths)));
+
+  /*
+   * The locale-neutral addresses a static host needs.
+   *
+   * `/` because a site must answer at its root, and `404.html` because that is
+   * the document a static host serves for every address it cannot match —
+   * including `/ja/nature`. Without the root 404 a disabled locale would reach
+   * the HOST's error page rather than this site's, and ADR-010's "not presented
+   * as localized content" would hold by accident rather than by design.
+   *
+   * Neither claims to be a locale. Both carry a canonical pointing at their
+   * `/en/` form, so the duplicate is declared rather than left to a crawler.
+   */
+  const neutral = (basePath: string, file: string): readonly Route[] => {
+    const source = base.find((r) => r.basePath === basePath);
+    if (source === undefined) return [];
+    return [{
+      ...source,
+      locale: DEFAULT_LOCALE,
+      path: basePath,
+      file,
+      body: localiseBody(source.body, DEFAULT_LOCALE, contentPaths),
+    }];
+  };
+
+  return [...neutral('/', 'index.html'), ...neutral('/404', '404.html'), ...localised];
+}
+
+function baseRoutes(
   catalogPath: string = CATALOG_PATH,
   runsPath: string = RUNS_PATH,
 ): readonly Route[] {

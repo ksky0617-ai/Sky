@@ -8,6 +8,7 @@
  */
 
 import { escapeHtml } from './markdown.ts';
+import { enabledLocales, localeByCode, localePath } from './locales.ts';
 import type { Route } from './routes.ts';
 
 export const SITE_NAME = 'Olibana';
@@ -26,7 +27,9 @@ export interface RenderOptions {
 // component." The layer and mode ride on <body>, so the stylesheet applies the
 // budget from one place and no component can opt itself back in.
 export function renderDocument({ route, nav, stylesheetHref, build = 'unknown' }: RenderOptions): string {
-  const title = route.path === '/' ? SITE_NAME : `${route.title} — ${SITE_NAME}`;
+  const title = route.basePath === '/' ? SITE_NAME : `${route.title} — ${SITE_NAME}`;
+  const lang = localeByCode(route.locale)?.lang ?? 'en';
+  const at = (path: string): string => localePath(route.locale, path);
 
   const navItems = nav
     .map((item) => {
@@ -37,6 +40,18 @@ export function renderDocument({ route, nav, stylesheetHref, build = 'unknown' }
 
   const robots = route.indexable === false ? '\n  <meta name="robots" content="noindex">' : '';
 
+  // ADR-010. The locale-prefixed address is the canonical one, so the site root
+  // — which serves the default locale's home without claiming to be a locale —
+  // points at `/en/` rather than at itself. Two addresses, one canonical.
+  const canonicalPath = localePath(route.locale, route.basePath);
+
+  // hreflang for ENABLED locales only. A disabled locale advertised here would
+  // be the same lie as a disabled locale served: it tells a search engine that
+  // a translation exists at an address that 404s.
+  const alternates = enabledLocales()
+    .map((locale) => `\n  <link rel="alternate" hreflang="${locale.lang}" href="${localePath(locale.code, route.basePath)}">`)
+    .join('');
+
   // Which build is serving. Without it a stale deployment is indistinguishable
   // from a fresh one: every other check passes either way.
   const buildMarker = `\n  <meta name="olibana-build" content="${escapeHtml(build)}">`;
@@ -46,10 +61,10 @@ export function renderDocument({ route, nav, stylesheetHref, build = 'unknown' }
   // and pairing `noindex` with a self-canonical is contradictory.
   const canonical = route.indexable === false
     ? ''
-    : `\n  <link rel="canonical" href="${route.path}">`;
+    : `\n  <link rel="canonical" href="${canonicalPath}">${alternates}`;
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${escapeHtml(lang)}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -68,7 +83,7 @@ export function renderDocument({ route, nav, stylesheetHref, build = 'unknown' }
   <a class="skip-link" href="#main">Skip to content</a>
   <div class="shell">
     <header class="site">
-      <a class="wordmark" href="/">${SITE_NAME}</a>
+      <a class="wordmark" href="${at('/')}">${SITE_NAME}</a>
       <nav class="primary" aria-label="Primary">
         <ul>${navItems}</ul>
       </nav>
@@ -78,10 +93,10 @@ ${route.body}
     </main>
     <footer class="site">
       <ul>
-        <li><a href="/nature">Nature</a></li>
-        <li><a href="/olibana/philosophy">Philosophy</a></li>
-        <li><a href="/olibana/design-language">Design Language</a></li>
-        <li><a href="/legal/accessibility">Accessibility</a></li>
+        <li><a href="${at('/nature')}">Nature</a></li>
+        <li><a href="${at('/olibana/philosophy')}">Philosophy</a></li>
+        <li><a href="${at('/olibana/design-language')}">Design Language</a></li>
+        <li><a href="${at('/legal/accessibility')}">Accessibility</a></li>
       </ul>
       <p>${SITE_NAME}</p>
     </footer>
@@ -90,9 +105,17 @@ ${route.body}
 </html>`;
 }
 
+/**
+ * The sitemap.
+ *
+ * Locale-prefixed addresses only. The site root serves the same content but
+ * declares `/en/` as its canonical, so listing both would advertise a duplicate
+ * — and a disabled locale is not listed at all, because it does not exist.
+ */
 export function renderSitemap(routes: readonly Route[], origin: string): string {
   const urls = routes
     .filter((r) => r.indexable !== false)
+    .filter((r) => r.path !== '/' && r.path !== '/404')
     .map((r) => `  <url><loc>${origin}${r.path}</loc></url>`)
     .join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>

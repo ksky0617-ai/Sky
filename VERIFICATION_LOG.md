@@ -9,6 +9,27 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-24-025 · V0 + V1 + V3 + V4 · Contract alignment: ADR-010, the search schema, and a parser regression closed
+
+| | |
+| --- | --- |
+| **Target** | `docs/adr/ADR-010-launch-locale-route-policy.md` (new), `src/site/locales.ts` (new), `src/site/search.ts` (new), `src/site/routes.ts`, `src/site/layout.ts`, `test/site/locale.test.ts` (new), `HUMAN_GATE_QUEUE.md` |
+| **Conflict resolved** | 03 §5 requires locale-prefixed routes from launch; 03 §1 forbids routes that cannot be truthfully filled; no Japanese or Korean translation exists; and `16_INTERNATIONALIZATION.md`, which §5 references, **is not in the repository**. Serving English from `/ja/` would represent the page as localized when it is not. ADR-010 resolves it the way ADR-009 resolved the cart: §5 asks for locale-aware *architecture*, not fabricated translations. |
+| **Built** | A locale registry where **`enabled` is derived, not declared** — a locale is enabled if and only if it declares content, so there is no flag anyone can set without supplying the translation. `en` ships; `ja` and `ko` are declared (the architecture is real) and produce no routes, no files, no sitemap entries and no `hreflang`. Every content address is now `/en/…`. |
+| **The tempting implementation is the forbidden one** | `splitLocale('/ja/nature')` returns **null**, not the default locale. ADR-010: "No fallback from /ja/ or /ko/ to English content will be presented as localization." A fallback is what most i18n layers do by default, which is exactly why it is asserted rather than assumed. |
+| **What a static host needed, found by thinking about the host rather than the router** | A root `404.html`, because that is the document a static host serves for an address it cannot match — including `/ja/nature`. Without it a disabled locale would reach **Cloudflare's** error page and ADR-010/4 would hold by accident. And `/` continues to serve, canonical `/en/`: a redirect needs host-specific configuration, and one present only on Cloudflare would make local and deployed disagree about the site's most requested address — the drift class this project has been bitten by twice. |
+| **03 §7 search schema** | §7 says search is **not built** in MVP-0 and asks for the schema now "so the index is not retrofitted". Six entity types, nine fields, every unknown `null` rather than optional — an optional field lets a producer forget, a nullable one makes it say whether it knows. The strongest rule: `naturalRule` and `atlasSource` must both be present or both be null, because a rule with no Atlas behind it is a claim with no measurement behind it, and answering *"which garments come from stone?"* from an invented rule is the one thing this brand cannot do. An unmeasured Atlas is indexed with `atlasSource: null`, decided by `countAtlasDataRows` — the same function the page uses, so index and page cannot disagree about whether data exists. |
+| **02 §4.1 — BLOCKED_EXTERNAL, recorded as GATE-004** | The Rule Layer renders only from real Atlas rows; all four hold zero. Removed from executable acceptance. Re-entry: authoritative field data **with its provenance recorded**, at 03 §3's threshold of 3 records per Atlas, 12 total. The risk is not that someone forgets to build it — it is that someone builds it against plausible numbers, so the constraint is enforced by the schema and asserted by a test that will fail the day rows arrive. |
+| **Mutation — 4 planted, 4 killed** | M1 make `isEnabled` return true (enable `/ja/` with no Japanese) → **5 tests fail.** M2 fall `/ja/` back to English → 1 fails. M3 allow a `naturalRule` with no `atlasSource` → 2 fail. M4 restore the string-blanking parser → 2 fail. |
+| **Parser regression closed** | `declarations()` erased attribute-selector values, collapsing `[data-layer="1"]` and `[data-layer="2"]` into one indistinguishable selector — the defect found in cycle 22, now covered by the two regression tests requested, plus a third asserting the brace-in-a-string behaviour the blanking existed to provide is still there. |
+| **Executed** | Real fixture deployment: `/ja/` **404**, `/ja/nature` **404**, `/en/nature` **200**, `/` **200**. Auditor **18 passed · 0 failed · 0 unverified**. Browser: 66 renders (11 routes × 3 viewports × 2 schemes), exit 0; motion budget still descends L1 9 → L2 3 → L3 1; `/ja/` renders this site's 404, not English. |
+| **Observed** | 397/397 pass (from 378). |
+| **Result** | **PASS** for ADR-010's five acceptance criteria, 03 §7, and the parser regression. |
+| **Still blocked** | GATE-001 (Cloudflare credentials) · GATE-002 (legal entity) · GATE-003 (payment account) · **GATE-004 (Atlas field data)**. None is a code defect. |
+| **Commit** | written against `dc61715` |
+
+---
+
 ## V-2026-08-24-024 · V0 + V3 · The silence budget, measured instead of assumed
 
 | | |
