@@ -9,6 +9,27 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-24-026 · V0 + V1 + V3 + V4 · Cross-layer contract verification
+
+| | |
+| --- | --- |
+| **Target** | `test/site/contracts.test.ts` (new), `test/http/not-found.test.ts` (new), `src/site/routes.ts` |
+| **Scope** | Consistency and regression hardening only. No feature was added. |
+| **The gap this closed, found by asking what the invariant rests on** | Cycle 25 claimed page and search index "cannot disagree" because both call `countAtlasDataRows`. That was true only because **`indexAtlas` was called by nothing** — there was no index to disagree with. An invariant that holds because one side is absent is not an invariant. The index is now a projection carried BY each route (`Route.search`), so page and entry are one object rather than two derivations that agree today. |
+| **1 · SEARCH ↔ PAGE ATLAS** | `naturalRule !== null ⟺ atlasSource !== null`, asserted over the real manifest rather than fixtures. Checked twice: against the route object, and against **the HTML that actually ships**, because a renderer could drop a section after the entry was computed. |
+| **2 · DISABLED LOCALE** | Five layers in one loop — route, generated file, sitemap, `hreflang`, search index — because checking them separately is exactly how a locale ends up gone from the routes and still in the sitemap. Paired with the inverse ("an enabled locale IS present in all five"), without which the test would pass against a build that emits nothing. |
+| **3 · CONTENT DELETION** | `source !== null → enabled`, and `enabled` is not a field, so there is nothing to set. Asserted against **the locale that is actually enabled**, with its content removed — see M4. |
+| **4 · HOST 404 CONTRACT** | `/`, `/en/`, `/ja/`, `/ja/nature`, `/nonexistent` across **both** servers: the local static path and `onRequest` driven as Pages drives it. They share the router and do *not* share what happens when it declines, which is precisely where a 404 contract diverges. Compared directly rather than checked separately — two servers that each satisfy the contract can still differ, and that difference is what a reader experiences as "it works locally". |
+| **5 · ADR INDEX** | Both directions now: a file the index omits (the ADR-009 regression, kept) **and** an index entry pointing at a file that does not exist. Plus a guard that the file list is non-empty, so it cannot pass vacuously. |
+| **Mutation — 5 required, 5 killed, and two of the five were wrong on the first run** | M1 page shows measurements while the index denies them → **2 tests**. M2 index claims a source the page denies → **7**. M3 disabled locale leaks into sitemap/hreflang/search → **8**. M4 `enabled` keyed on the locale's name rather than its content → **1**. M5 no root `404.html`, so deployed and local 404s diverge → **5**. |
+| **The two that were wrong, recorded because the record is the point** | **M1 first reported SURVIVED — it had never applied.** My replacement used six spaces of indentation where the source has four, so the file was untouched and the green result was a measurement of nothing. A mutation that does not apply looks exactly like a mutation that was not caught. Every mutation now confirms it applied before its result is read. **M4 first reported SURVIVED and was an EQUIVALENT MUTANT**: `locale.code === 'en' \|\| source !== null` changes nothing while `en` has content. But it exposed a real gap — every content-deletion test used a hypothetical `ja`, and none took the locale that is *actually* enabled and removed its content. That test now exists, and the re-run of M4 as a non-equivalent mutant is killed by it. |
+| **Executed** | 414/414 tests. 60 browser renders across 10 routes × 3 viewports × 2 colour schemes, exit 0. Motion budget unchanged: **L1 9 → L2 3 → L3 1**. Real fixture deployment: `/` 200, `/en/` 200, `/ja/` **404 with this site's own document and no English content**, `/ja/nature` **404**, `/nonexistent` **404**. Deployment auditor **18 passed · 0 failed · 0 unverified**. |
+| **Result** | **PASS** for all five contracts. |
+| **GATE-004 — unchanged, and now trigger-armed** | 02 §4.1 remains **BLOCKED_EXTERNAL**. No Atlas field data was fabricated and no synthetic fixture was added to satisfy it; the four Atlases hold **0 rows**, and a test asserts that total is zero *and* that nothing in the index cites an Atlas. The day real rows arrive that test fails, which forces the gate to be re-examined rather than left blocked out of habit. Re-entry still requires real data, recorded provenance, and 03 §3's 12-row threshold. |
+| **Commit** | written against `af402c5` |
+
+---
+
 ## V-2026-08-24-025 · V0 + V1 + V3 + V4 · Contract alignment: ADR-010, the search schema, and a parser regression closed
 
 | | |

@@ -22,6 +22,7 @@ import { Catalog, type ProductRevision } from '../catalog/catalog.ts';
 import { PreorderRunStore, preorderWindow, type PreorderWindow } from '../preorder/run.ts';
 import { FileStorage } from '../persistence/file-storage.ts';
 import { DEFAULT_LOCALE, enabledLocales, localePath } from './locales.ts';
+import { indexAtlas, indexPage, indexProduct, type SearchDocument } from './search.ts';
 
 export interface Route {
   /** URL path. */
@@ -57,6 +58,21 @@ export interface Route {
   readonly nav?: { readonly label: string; readonly order: number };
   /** Excluded from the sitemap (error pages). */
   readonly indexable?: boolean;
+  /**
+   * How 03 §7 indexes this route, or null for a route that is not indexed.
+   *
+   * Carried BY the route rather than derived alongside it. §7's whole argument
+   * is that the index must not be retrofitted, and an index built from a
+   * second walk over the same data is a second opinion that can drift: a page
+   * could show measurements while the index says the Atlas has none, and
+   * nothing would notice until someone searched. Here there is one object, so
+   * the page and its entry cannot disagree about the same fact.
+   *
+   * Optional on the constructors, always present on what `buildRoutes` returns:
+   * a page that says nothing special about itself gets the default entry below
+   * rather than being silently left out of the index.
+   */
+  readonly search?: SearchDocument | null;
   /** Which locale serves this route — ADR-010. */
   readonly locale: string;
   /**
@@ -144,6 +160,11 @@ function atlasPage(atlas: AtlasSpec): Route {
   );
 
   return {
+    // The same `rows` count decides both. `indexAtlas` recomputes it from the
+    // same source text, and the assertion below pins them together so a change
+    // to either derivation is caught rather than discovered by a search that
+    // returns a garment nobody measured.
+    search: indexAtlas({ ...atlas, source }, `/nature/${atlas.slug}`),
     path: `/nature/${atlas.slug}`,
     basePath: `/nature/${atlas.slug}`,
     locale: DEFAULT_LOCALE,
@@ -348,6 +369,11 @@ function productSlug(product: ProductRevision): string {
 
 function productPage(product: ProductRevision, run: PreorderWindow | null): Route {
   return {
+    // A product's entry carries the recorded natural rule and the Atlas behind
+    // it — §7's whole reason for indexing both from the start. Passed through
+    // from the catalogue, never derived: `null` until a Fashion Specification
+    // supplies one.
+    search: indexProduct(product, `/products/${productSlug(product)}`),
     path: `/products/${productSlug(product)}`,
     basePath: `/products/${productSlug(product)}`,
     locale: DEFAULT_LOCALE,
@@ -426,6 +452,12 @@ function localise(route: Route, code: string, contentPaths: ReadonlySet<string>)
     // `/en/` -> `en/index.html`; `/en/nature` -> `en/nature/index.html`.
     file: `${code}/${route.file}`,
     body: localiseBody(route.body, code, contentPaths),
+    // The entry's url follows the page. An index pointing at the unprefixed
+    // address would send every search result to a page that no longer exists
+    // there.
+    search: route.search === null || route.search === undefined
+      ? null
+      : { ...route.search, url: path },
   };
 }
 
@@ -447,7 +479,20 @@ export function buildRoutes(
   catalogPath: string = CATALOG_PATH,
   runsPath: string = RUNS_PATH,
 ): readonly Route[] {
-  const base = baseRoutes(catalogPath, runsPath);
+  const base = baseRoutes(catalogPath, runsPath).map((route) => ({
+    ...route,
+    // One derivation. A route that declares its own entry (an Atlas, a product)
+    // keeps it; everything else is indexed as a page from the very title and
+    // description the document itself carries, so the index cannot describe a
+    // page differently from how the page describes itself.
+    //
+    // `indexable === false` means the 404 document, which is not content and is
+    // not indexed. Explicitly null rather than absent: it says the decision was
+    // made, not that nobody looked.
+    search: route.search ?? (route.indexable === false
+      ? null
+      : indexPage({ title: route.title, description: route.description }, route.basePath)),
+  }));
   const contentPaths = new Set(base.map((r) => r.basePath));
 
   const localised = enabledLocales().flatMap((locale) =>
@@ -474,6 +519,10 @@ export function buildRoutes(
       path: basePath,
       file,
       body: localiseBody(source.body, DEFAULT_LOCALE, contentPaths),
+      // Not indexed. These addresses duplicate a locale page and declare it
+      // canonical; indexing both would put the same content in the index twice
+      // under two urls.
+      search: null,
     }];
   };
 
