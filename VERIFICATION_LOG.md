@@ -9,6 +9,27 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-24-029 · V0 + V1 + V3 + V4 · Content depth, and a check for the failure that keeps recurring
+
+| | |
+| --- | --- |
+| **Target** | `test/meta/no-dead-surface.test.ts` (new), `src/site/product-page.ts`, `src/site/routes.ts`, `src/catalog/catalog.ts`, `test/site/ui.test.ts` |
+| **My own defect, found first** | `absentPhotography()` and `note()` — introduced last cycle — had **zero callers**. That is the fifth time this repository has shipped something defined and never invoked (the motion tokens, the light states, `indexAtlas`, the router's second type scale, and now mine), and the first time I caused it. |
+| **So the check exists now, not the apology** | `test/meta/no-dead-surface.test.ts`: every `export function` and `export async function` in `src/` must be called from `src/`, or carry an annotated reason why it is called from outside. **A function with no caller has no behaviour to be wrong** — which is why every one of those five was invisible to the whole suite while the feature did not exist. Anchored by a control that fails if the check stops reporting anything, and by a check that an exemption still names a real export, so a stale exemption cannot silently un-cover a name. |
+| **What it found on its first run: 12 orphans, 4 of them real** | (1) `isProductEventId` — **zero callers anywhere, not even a test.** Deleted. (2) The catalogue validated a product code by **fabricating `${code}-XXX-M` and parsing that**, while the purpose-built `parseProductCode` sat unused — the check worked, and tied code validation to `-XXX-M` remaining a valid colour and size forever. Now uses the parser. (3) `isId` was **imported into `catalog.ts` and never used** from the cycle the catalogue was written, which surfaced that (4) **`productId` is never validated at all.** |
+| **A decision, not a fix, on productId** | Enforcing the ULID shape would make every fixture in this repository an unreadable string, and the id is an internal key from the authoring path that never crosses a trust boundary — unlike the code and the SKU, which appear on pages and inside orders and are both checked. Recorded on `assertWellFormed` **so the next reader does not mistake it for the oversight it looked like.** |
+| **Two defects in my own checker, both caught by it failing** | It matched `^export function` only, so **every `export async function` was invisible to a check whose whole job is finding what nothing looks at.** And the stale-exemption test read only `src/`, so `onRequest` — which lives in `functions/` — was reported as a stale exemption when the exemption was correct. |
+| **A false claim, live for eight cycles** | The accessibility page said *"no screen-reader testing, no automated accessibility audit, and **no colour-contrast validation** has been run against this build."* Contrast validation has run since cycle 21 — per element, in both light states, at three widths, and it **found and fixed a site-wide AA failure**. The page now states what was measured and what was not, and the honest remainder (screen-reader testing, a full audit, and the palette still being provisional) is an `awaiting()` state. |
+| **And the claims are now pinned to their evidence** | Found by a mutation that **SURVIVED**: flipping "What has been measured" to "What has not been measured" changed nothing, because nothing tied the page's factual claims to the checks that exist. Each claim now names the evidence that makes it true, so adding a claim with no evidence fails. That is the only thing that stops this page drifting back into fiction, and drifting is exactly what it did. |
+| **Content depth** | The home page linked to the four Atlases and nothing else — Philosophy and Design Language were reachable only from the nav bar, so the two pages explaining *why* the Atlases matter were the two the portal never sent anyone to. Both destinations already existed; this is information architecture, not new content. Every section now states its purpose. The product page carries the 4:5 photography slot where a garment photograph will land, and holds no picture. |
+| **Mutation — 5 planted, 5 killed, one after a repair** | M1 the product page shows an invented garment photograph → 1. M2 the pre-order explanation becomes an absence again → 4. M3 an exported function loses its only caller → 1. M4 the catalogue reverts to the fabricated-SKU check → 1. **M5 the accessibility page reinstates the false claim → SURVIVED**, and is killed after the claim-to-evidence test above. |
+| **Executed** | 449/449 tests (from 445). **66 browser renders** — 11 routes × 3 viewports × 2 colour schemes — exit 0. Deployment auditor on a real fixture deployment: **every check passed**, `/health` cross-checked rather than believed. |
+| **Motion budget** | **L1 12 → L2 2 → L3 1.** Descending. L1 rose from 9 because the home page gained a section and two destinations — the absolute number follows the content; the descent is the invariant and it holds. |
+| **Gates unchanged** | GATE-004 Atlas field data — **0 rows**, nothing fabricated. GATE-005 product photography — **0 images**; the slot is reserved and empty. GATE-001/002/003 unchanged. |
+| **Commit** | written against `896c4aa` |
+
+---
+
 ## V-2026-08-24-028 · V0 + V1 + V3 + V4 · UI depth without new claims
 
 | | |

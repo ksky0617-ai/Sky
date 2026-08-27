@@ -210,3 +210,58 @@ test('a recovery surface reduces motion below what its layer allows', () => {
   );
   assert.deepEqual(adders.map((d) => d.selector), [], 'a mode rule starts an animation');
 });
+
+// --- the accessibility page's claims must be true ------------------------
+
+test('every measurement the accessibility page claims is one that actually runs', () => {
+  // Found by a mutation that SURVIVED. The page makes factual claims about what
+  // has been checked, and nothing verified those claims — which is exactly how
+  // "no colour-contrast validation has been run against this build" stayed on a
+  // live page for eight cycles after it became false.
+  //
+  // Each claim is tied to the evidence that makes it true. Adding a claim with
+  // no evidence fails here, which is the only thing that stops this page
+  // drifting back into fiction.
+  const page = html('en/legal/accessibility/index.html');
+  const visualCheck = readFileSync(resolve(import.meta.dirname, '../../scripts/visual-check.mjs'), 'utf8');
+
+  assert.match(page, /<h2>What has been measured<\/h2>/, 'the measured section is gone or renamed');
+
+  const claims: ReadonlyArray<{ readonly claim: RegExp; readonly evidence: RegExp; readonly where: string }> = [
+    {
+      claim: /Colour contrast, for every element that paints its own text/,
+      evidence: /lowContrast/,
+      where: 'the per-element contrast sweep in scripts/visual-check.mjs',
+    },
+    {
+      claim: /in both light states/,
+      evidence: /colorScheme: scheme/,
+      where: 'the dual colour-scheme viewport matrix',
+    },
+    {
+      claim: /24x24 CSS pixel minimum/,
+      evidence: /MIN_TARGET_PX = 24/,
+      where: 'the target-size floor',
+    },
+    {
+      claim: /no content is revealed only by animation, measured at rest/,
+      evidence: /are not fully painted at rest/,
+      where: 'the resting-opacity sweep',
+    },
+  ];
+
+  for (const { claim, evidence, where } of claims) {
+    assert.match(page, claim, `the page no longer makes a claim this test pins: ${claim}`);
+    assert.match(
+      visualCheck, evidence,
+      `the page claims "${claim}" but ${where} is gone — the claim is now false`,
+    );
+  }
+
+  // And the specific correction this cycle made: the page must NOT say contrast
+  // is unvalidated, because it is.
+  assert.ok(
+    !/no colour-contrast validation\s+has been run/i.test(page),
+    'the page reinstated a claim that has been false since the contrast sweep was built',
+  );
+});

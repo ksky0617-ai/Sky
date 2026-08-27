@@ -20,6 +20,7 @@
  */
 
 import { escapeHtml } from './markdown.ts';
+import { absentPhotography, awaiting, note } from './states.ts';
 import type { Measurement, ProductRevision, Variant } from '../catalog/catalog.ts';
 import type { PreorderWindow } from '../preorder/run.ts';
 
@@ -51,8 +52,10 @@ function priceRange(variants: readonly Variant[]): string | null {
 
 function measurementsTable(measurements: readonly Measurement[], sizes: readonly string[]): string {
   if (measurements.length === 0) {
-    return `<div class="state"><p>Measurements for this garment have not been recorded yet. ` +
-      `They are taken from the approved sample, not estimated.</p></div>`;
+    return awaiting(
+      'No measurements',
+      'have been recorded for this garment. They are taken from the approved sample, never estimated.',
+    );
   }
   const head = ['', ...sizes].map((s) => `<th>${escapeHtml(s)}</th>`).join('');
   const rows = measurements
@@ -167,15 +170,27 @@ export function renderProductBody(
   );
   parts.push('</dl>');
 
+  // Where the garment's photograph goes. GATE-005: none exists, because no
+  // garment has been made. The box is reserved at the 4:5 portrait crop a
+  // garment is shot in, so this layout is the one the photograph lands in
+  // rather than one that shifts when it arrives — and it holds no picture,
+  // because a generated or stock stand-in would depict a product that does not
+  // exist (02 §7).
+  parts.push(absentPhotography(product.name));
+
   // ADR-003: the window is disclosed before the purchase action, not after.
   const window =
     run === null
       ? `the garment is made afterwards${approximate === '' ? '' : `, and dispatched about ${lead} days after the order window closes`}`
       : `the garment is made afterwards, and dispatched by ${escapeHtml(stateDate(run.promisedShipBy))}`;
+  // A note, not an absence: the pre-order model is how this works, and it is
+  // true now. Sharing one box with "no measurements have been recorded" made
+  // an explanation and a gap look identical.
   parts.push(
-    `<div class="state"><p><strong>This is a pre-order.</strong> Payment is taken when you order; ` +
-      `${window}. ` +
-      `If the run does not reach its minimum, every order is refunded in full.</p></div>`,
+    note(
+      `<p><strong>This is a pre-order.</strong> Payment is taken when you order; ${window}. ` +
+        'If the run does not reach its minimum, every order is refunded in full.</p>',
+    ),
   );
 
   // The purchase action. Present only when a run is open, because only then is

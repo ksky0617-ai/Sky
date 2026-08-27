@@ -23,7 +23,7 @@
  * Absent by design (SPEC §2.3): inventory — pre-order holds no stock.
  */
 
-import { formatSku, isId, newId, parseSku, type CategoryCode } from '../identity/ids.ts';
+import { formatSku, newId, parseProductCode, parseSku, type CategoryCode } from '../identity/ids.ts';
 import { AppendLog, LogCorruptError } from '../persistence/append-log.ts';
 import type { LogStorage } from '../persistence/storage.ts';
 
@@ -112,8 +112,31 @@ function assertPublishable(product: ProductInput): void {
   }
 }
 
+/**
+ * The integrity rules a product must satisfy before it is written.
+ *
+ * `productId` is deliberately NOT format-checked. `isId` — the validator for
+ * exactly that shape — sat imported and unused in this file from the cycle the
+ * catalogue was written; finding it raised the question rather than answering
+ * it, and the answer is that enforcing it would buy very little and cost
+ * something real. The id is an internal key supplied by the authoring path,
+ * never parsed from a request, and a malformed one cannot cross a trust
+ * boundary the way a code or a SKU can — those appear on pages and inside
+ * orders, and both ARE checked. Enforcing the ULID shape would also make every
+ * fixture in this repository an unreadable string, which costs more in review
+ * than it saves in safety.
+ *
+ * Recorded as a decision so the next reader does not mistake it for the
+ * oversight it looked like.
+ */
 function assertWellFormed(product: ProductInput): void {
-  if (parseSku(`${product.code}-XXX-M`) === null) {
+  // `parseProductCode`, not a fabricated SKU. This validated the code by
+  // building `${product.code}-XXX-M` and parsing THAT — which worked, and tied
+  // code validation to `-XXX-M` remaining a valid colour and size forever. A
+  // change to the size vocabulary would have broken product-code validation for
+  // a reason with nothing to do with product codes, and the purpose-built
+  // parser was sitting unused two modules away.
+  if (parseProductCode(product.code) === null) {
     throw new CatalogIntegrityError(`${product.code} is not a valid product code`);
   }
   const seen = new Set<string>();
@@ -232,6 +255,3 @@ export function variant(
   };
 }
 
-export function isProductEventId(value: string): boolean {
-  return isId('event', value);
-}

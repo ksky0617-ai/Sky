@@ -102,8 +102,11 @@ test('an absent natural rule leaves the section out rather than filling it', () 
 });
 
 test('unrecorded measurements are disclosed, never invented', () => {
+  // Now rendered through `awaiting()`, which marks it as an ABSENCE rather than
+  // a note — the distinction matters most here, because a reader deciding on a
+  // size needs to know the table is missing rather than merely terse.
   const body = renderProductBody({ ...fixture({ measurements: [] }), eventId: 'EVT_x', recordedAt: 'now' });
-  assert.match(body, /have not been recorded yet/);
+  assert.match(body, /have been recorded for this garment/);
   assert.ok(!/\d+ cm/.test(body), 'a measurement appeared without data');
 });
 

@@ -205,7 +205,23 @@ function homePage(): Route {
         `<span class="index-note">${a.description}</span></a></li>`,
     ).join(''),
     '</ul>',
+
+    // The home page linked to the four Atlases and to nothing else. Philosophy
+    // and Design Language were reachable only from the navigation bar — which
+    // means the two pages explaining WHY the Atlases matter were the two the
+    // portal never sent anyone to. Both destinations already exist; this is
+    // information architecture, not new content.
+    '<h2>The method</h2>',
+    '<div class="lede"><p>What the Atlases are for, and the checks a piece has to pass before it is made.</p></div>',
+    '<ul class="index">',
+    '<li><a href="/olibana/philosophy"><span class="index-title">Philosophy</span>' +
+      '<span class="index-note">Why nature is treated as a design system rather than a source of imagery.</span></a></li>',
+    '<li><a href="/olibana/design-language"><span class="index-title">Design Language</span>' +
+      '<span class="index-note">The six principles, and the evaluation every design is scored against.</span></a></li>',
+    '</ul>',
+
     '<h2>The collection</h2>',
+    '<div class="lede"><p>What can be bought, and when.</p></div>',
     awaiting(
       'No garment',
       'is offered for sale yet. The first is an outerwear piece, and it will be offered as a ' +
@@ -330,12 +346,23 @@ word readable whether or not any motion runs.</p>
 <li>Full function with JavaScript disabled — the site ships no JavaScript at all.</li>
 <li>Wide tables scroll within their own container so the page never scrolls sideways.</li>
 </ul>
+<h2>What has been measured</h2>
+<ul>
+<li>Colour contrast, for every element that paints its own text, against the background actually
+behind it — in both light states, at three viewport widths. This found and fixed a site-wide
+failure: a grey used for the footer, list notes and form hints was 3.45:1 against the page,
+below the 4.5:1 minimum.</li>
+<li>Target size, against the 24x24 CSS pixel minimum, in a real browser rather than in the source.</li>
+<li>That no content is revealed only by animation, measured at rest with no scrolling performed.</li>
+</ul>
 <h2>What has not been verified</h2>
-<div class="state">
-<p>No screen-reader testing, no automated accessibility audit, and no colour-contrast validation
-has been run against this build. The palette shown here is a temporary construction palette,
-not the brand palette, and its contrast has not been validated.</p>
-</div>
+${awaiting(
+  'No screen-reader testing and no full automated audit',
+  'have been run against this build. The measurements above are specific checks, not a ' +
+    'conformance claim, and they cannot detect what only a person using assistive technology ' +
+    'would notice. The palette is also a temporary construction palette rather than the brand ' +
+    'palette, so these ratios describe what ships today and not what will ship.',
+)}
 <h2>Reaching us</h2>
 <p>A contact channel is not open yet. When it is, it will be listed here.</p>`.trim();
 
