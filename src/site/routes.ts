@@ -157,19 +157,38 @@ function atlasPage(atlas: AtlasSpec, published: readonly ProductRevision[]): Rou
   // catalogue is empty, so every Atlas shows an absence.
   const derived = published.filter((product) => product.naturalRule?.atlas === atlas.title);
 
+  // The order this Atlas is described in on every index that links to it:
+  // "what is studied, how it is measured, and what it yields". The middle one
+  // was missing from the page.
+  //
+  // It is also the section that makes an unmeasured Atlas worth reading. The
+  // absence state below says "the method above is the work; the readings follow
+  // it" — and until this cycle there was no method above it. A page that refers
+  // to something it does not contain is a page making a claim about itself that
+  // a reader can check and find false, which is the worst kind this site can
+  // carry. The method is the asset while the data does not exist: it names each
+  // parameter, its unit, and how it is taken, so the absence is a piece of work
+  // nobody has done yet rather than a hole.
   const parts = [
     `<h1>${atlas.title}</h1>`,
     `<div class="lede">${section(atlas.file, 'Focus of Study')}</div>`,
+    '<h2>How it is measured</h2>',
+    section(atlas.file, 'Measurement Templates'),
     '<h2>Observations</h2>',
     section(atlas.file, 'Observations'),
     '<h2>Design Translation</h2>',
     section(atlas.file, 'Design Translation'),
   ];
 
-  // Measurements appear only when measurements exist.
+  // The heading is unconditional; only what sits under it changes. An absence
+  // rendered with no heading floats after the previous section with nothing
+  // naming it, which reads as the end of the page rather than as a section
+  // whose contents do not exist yet — the same omission the product page's
+  // natural rule made.
+  parts.push('<h2>Field measurements</h2>');
   parts.push(
     rows > 0
-      ? `<h2>Measurements</h2>${renderMarkdown(extractSection(source, 'Data Log') ?? '', documentRoutes())}`
+      ? renderMarkdown(extractSection(source, 'Data Log') ?? '', documentRoutes())
       : awaiting(
           'No field measurements',
           'have been recorded for this Atlas. The method above is the work; the readings follow it.',

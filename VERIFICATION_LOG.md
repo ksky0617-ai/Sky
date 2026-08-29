@@ -9,6 +9,24 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-24-032 · V0 + V1 + V3 + V4 · The Atlas pages, useful while the field data is absent
+
+| | |
+| --- | --- |
+| **Target** | `src/site/routes.ts`, `scripts/visual-check.mjs`, `test/site/build.test.ts` |
+| **A false claim on all four Atlas pages** | The measurement absence reads *"The method above is the work; the readings follow it."* **There was no method above it.** The page rendered Focus of Study, Observations and Design Translation; `Measurement Templates` — the section naming each parameter, its unit, and how it is taken — was in every Atlas document and on no page. A page referring to something it does not contain makes a claim about itself that a reader can check and find false. |
+| **It is also the answer to "useful while unmeasured"** | The method is the asset while the data does not exist. With it on the page the absence is a piece of work nobody has done yet, with the instrument for doing it printed underneath; without it the absence is a hole. It also restores the order every index promises the Atlas in — *"what is studied, how it is measured, and what it yields"* — of which the middle third was missing. |
+| **The same omission the product page had** | With no readings the measurements section had **no heading at all**, so the absence floated after Design Translation with nothing naming it and read as the end of the page. The heading is unconditional now; only what sits under it changes. |
+| **A test whose meaning had drifted** | `build.test.ts` asserted `!/<h2>Measurements<\/h2>/` to mean "no empty table". After the rename to *Field measurements* that assertion passed **by accident of the rename** while checking nothing. It now scopes to the section and forbids a `<table>` inside it, which is what it always meant. |
+| **Mutation — 3 planted, 3 killed** | M8 the method section is dropped → killed. M9 the field-measurements heading is dropped → killed. M10 the method is moved BELOW the sentence calling it "above" → killed. |
+| **Coverage gap closed** | The render matrix measured `/en/nature` and no Atlas leaf — so the only page in that section carrying a preformatted block was the one page never rendered. `/en/nature/river` added: **78 renders**, no overflow at any width in either colour scheme. |
+| **Executed** | 465/465 tests. 78 browser renders — 13 routes × 3 viewports × 2 colour schemes — exit 0. |
+| **Motion budget** | **L1 12 → L2 7 → L3 1.** Descending. The Atlas leaf enters L1 at 7. |
+| **Gates unchanged** | GATE-004 — still **0 rows** in every Data Log, and publishing the method does not change that. Nothing here invents a reading. GATE-005 unchanged. **COMPLETION remains FALSE.** |
+| **Commit** | written against `b3db8cf` |
+
+---
+
 ## V-2026-08-24-031 · V0 + V1 + V3 + V4 · Visual and content integration: the leaf stops being a dead end
 
 | | |

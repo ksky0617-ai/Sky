@@ -219,6 +219,12 @@ const routes = [
   // so they are where a reveal would strand content if one did.
   ['nature', '/en/nature'],
   ['philosophy', '/en/olibana/philosophy'],
+  // An Atlas leaf, which the index above is not. It is the only page carrying a
+  // preformatted block, alongside the parameter table — both are the shapes
+  // that push a page sideways, and `.table-scroll` exists because one already
+  // did. Measuring the index and calling the Atlases covered was measuring the
+  // one page in that section that has neither.
+  ['atlas', '/en/nature/river'],
   // The one route carrying an image. Its aspect box, its contrast in both light
   // states and its effect on CLS are the reason it is measured separately.
   ['design-language', '/en/olibana/design-language'],

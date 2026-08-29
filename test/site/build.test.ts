@@ -98,7 +98,40 @@ test('Atlas pages disclose the absence of measurements instead of showing an emp
     assert.match(source, /class="state state-awaiting"/, `${atlas} does not mark the gap as an absence`);
     assert.match(source, /No field measurements/, `${atlas} hides the gap`);
     assert.match(source, /have been recorded for this Atlas/, `${atlas} does not say what is missing`);
-    assert.ok(!/<h2>Measurements<\/h2>/.test(source), `${atlas} shows an empty measurements table`);
+    // The heading is unconditional now, so its absence is no longer the signal.
+    // What must not exist is a TABLE under it: an empty measurements table
+    // implies readings were taken and came back blank. Checked on the section
+    // itself rather than on the page, which carries the method's own table.
+    const start = source.indexOf('<h2>Field measurements</h2>');
+    assert.notEqual(start, -1, `${atlas} has no field-measurements section`);
+    const end = source.indexOf('<h2>', start + 4);
+    const section = end === -1 ? source.slice(start) : source.slice(start, end);
+    assert.ok(!/<table/.test(section), `${atlas} shows an empty measurements table`);
+  }
+});
+
+test('the absence names a method the page actually contains', () => {
+  // The absence state says "The method above is the work; the readings follow
+  // it" — and for the whole life of these pages there was no method above it.
+  // A page that refers to something it does not contain is making a claim about
+  // itself that a reader can check and find false.
+  for (const atlas of ['river', 'stone', 'forest', 'light']) {
+    const source = html(`en/nature/${atlas}/index.html`);
+    const method = source.indexOf('<h2>How it is measured</h2>');
+    const absence = source.indexOf('The method above is the work');
+
+    assert.notEqual(method, -1, `${atlas} has no measurement method on the page`);
+    assert.notEqual(absence, -1, `${atlas} no longer refers to the method — update this test with it`);
+    assert.ok(method < absence, `${atlas} puts the method BELOW the sentence calling it "above"`);
+
+    // The method is the parameter table, not a sentence about one: every Atlas
+    // states what is measured, in what unit, and how it is taken.
+    const end = source.indexOf('<h2>', method + 4);
+    const section = source.slice(method, end === -1 ? undefined : end);
+    assert.match(section, /<table/, `${atlas} names a method with no parameters in it`);
+    assert.match(section, /<th>Parameter<\/th>/, `${atlas} lost the parameter column`);
+    assert.match(section, /<th>Unit<\/th>/, `${atlas} states parameters with no units`);
+    assert.match(section, /<th>Method<\/th>/, `${atlas} states parameters with no way to take them`);
   }
 });
 
