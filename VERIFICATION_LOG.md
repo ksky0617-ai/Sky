@@ -9,6 +9,26 @@ Tiers: `V0` static · `V1` unit · `V2` integration · `V3` end-to-end · `V4` a
 
 ---
 
+## V-2026-08-24-030 · V0 + V1 + V3 + V4 · The leaf of the hierarchy: Atlas ↔ garment
+
+| | |
+| --- | --- |
+| **Target** | `src/site/atlases.ts` (new), `src/site/routes.ts`, `src/site/product-page.ts`, `test/site/contracts.test.ts` |
+| **What the hierarchy showed** | Home → Philosophy · Design Language · Atlases → Atlas 1–4 → **garment / measurement**. Everything above the leaf already matched the site's navigation. The leaf did not exist in either direction. |
+| **03 §6, the connection this is** | *"The directive's central UX claim (§25) is that philosophy and commerce must connect."* Two of §6's five connections are now built. **Atlas → Product** ("Garments from this rule") was absent entirely. **Product → Atlas** existed as a Natural Rule block that rendered its source as **plain text** — so a reader told a garment comes from the River Atlas had no way to go and read it. Philosophy and product were on the same page and still not connected. |
+| **Derived, in both directions** | The join is the `naturalRule.atlas` a garment already records, matched against the Atlas registry. Nobody maintains a list: the day a garment is published citing the River Atlas, it appears on that page and that page appears on it. A hand-kept list is the version that goes stale, and this repository has watched five things go stale by being written down twice. |
+| **A new module, to remove a cycle rather than to tidy** | The route manifest builds the Atlas pages, the product renderer builds the products, and the manifest already imports the renderer. Putting the Atlas registry in either would make the other import it back, so it lives in `atlases.ts` and neither owns it. |
+| **The decision inside the join** | `atlasByTitle` returns **null** for a title this site does not publish, and a null renders as plain text rather than a link. `Design_System.md` records a Material Atlas as "a planned expansion", so a product citing one is a real possibility — and guessing `/nature/material` from the string would be a 404 with a plausible name, which is the two dead `.md` links arrived at more cleverly. |
+| **The test that matters is not the empty one** | A section that is always empty is indistinguishable from a section wired to nothing, and this repository has shipped that exact thing five times. So a garment is published against a temporary catalogue and the River Atlas is **required to find it** — and the Stone Atlas is required not to. |
+| **Mutation — 5 planted, 5 killed** | M1 the Atlas lists every product rather than the ones citing its rule → 1. M2 the connection is a hardcoded empty state that never populates → 1. M3 the product's source reverts to plain text → 1. M4 an unpublished Atlas gets a guessed link → 1. M5 the absence stops naming what is missing → 2. |
+| **What stays unbuilt, and is asserted unbuilt** | §6's other three connections — Article → Product, Collection → Atlas, and the Rule Layer overlay — depend on journal articles, collections and Atlas field data, none of which exist. None is stubbed, and a test asserts no page ships a Rule Layer while there is no data behind it. |
+| **Executed** | 453/453 tests (from 449). **66 browser renders** — 11 routes × 3 viewports × 2 colour schemes — exit 0. Deployment auditor on a real fixture deployment: **every check passed**. |
+| **Motion budget** | **L1 12 → L2 2 → L3 1.** Descending, unchanged. |
+| **Gates unchanged** | GATE-004 Atlas field data — **0 rows**. GATE-005 product photography — **0 images**. This cycle makes the *shape* of the connection real; §6 records that all five connections block on the same two inputs, and both are still missing. GATE-001/002/003 unchanged. |
+| **Commit** | written against `f78f7ec` |
+
+---
+
 ## V-2026-08-24-029 · V0 + V1 + V3 + V4 · Content depth, and a check for the failure that keeps recurring
 
 | | |

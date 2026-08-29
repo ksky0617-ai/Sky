@@ -21,6 +21,9 @@ import { build } from '../../src/site/build.ts';
 import { buildRoutes, countAtlasDataRows, type Route } from '../../src/site/routes.ts';
 import { disabledLocales, enabledLocales, isEnabled } from '../../src/site/locales.ts';
 import { assertSearchDocument, indexAtlas } from '../../src/site/search.ts';
+import { Catalog, variant } from '../../src/catalog/catalog.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
+import { renderProductBody } from '../../src/site/product-page.ts';
 
 const outDir = mkdtempSync(resolve(tmpdir(), 'olibana-contracts-'));
 const result = build({ outDir });
@@ -218,5 +221,104 @@ test('CONTRACT: no Atlas carries field data, so §4.1 stays BLOCKED_EXTERNAL', (
   // And while it is zero, nothing in the index may claim an Atlas source.
   for (const route of routes) {
     assert.equal(route.search?.atlasSource ?? null, null, `${route.path} cites an Atlas that holds no rows`);
+  }
+});
+
+// --- 03 §6: the cross-layer connections ---------------------------------
+//
+// "The directive's central UX claim (§25) is that philosophy and commerce must
+// connect." Two of the five connections are now built, both DERIVED from the
+// rule a garment records rather than from a list anyone maintains — which is
+// the only version that cannot go stale, and the only version that lights up
+// on its own the day a garment exists.
+
+test('§6 Atlas -> Product: each Atlas shows the garments derived from its rule', () => {
+  // Empty today, and empty for a stated reason rather than because the section
+  // was never built. The next test proves it is not empty *by construction*.
+  for (const route of atlasRoutes) {
+    assert.match(route.body, /<h2>Garments from this rule<\/h2>/, `${route.path} does not connect to product`);
+    assert.match(route.body, /state-awaiting/, `${route.path} shows no absence for its garments`);
+    assert.match(route.body, /No garment/, `${route.path} does not say what is missing`);
+  }
+});
+
+test('§6 Atlas -> Product POPULATES when a garment cites the Atlas', () => {
+  // The test that matters. A section that is always empty is indistinguishable
+  // from a section wired to nothing, and this repository has shipped that exact
+  // thing five times. So a garment is published against a temporary catalogue
+  // and the Atlas page is required to find it.
+  const work = mkdtempSync(resolve(tmpdir(), 'olibana-atlas-link-'));
+  const catalogPath = resolve(work, 'catalog.jsonl');
+  const runsPath = resolve(work, 'runs.jsonl');
+
+  new Catalog(new FileStorage(catalogPath)).record({
+    productId: 'PRD_link', code: 'OLB-CT-002', name: 'Meander Coat', category: 'CT',
+    status: 'PUBLISHED', summary: 'A fixture for the Atlas connection.',
+    variants: [variant('OLB-CT-002', 'STN', 'M', { amount: 72000, currency: 'JPY' })],
+    measurements: [],
+    naturalRule: { atlas: 'River Atlas', observation: 'meander curvature', translation: 'the hem follows a continuous curve' },
+    materials: ['Wool'], productionLeadDays: 60, actor: 'test',
+  });
+
+  try {
+    const withProduct = buildRoutes(catalogPath, runsPath);
+    const river = withProduct.find((r) => r.path === '/en/nature/river');
+    const stone = withProduct.find((r) => r.path === '/en/nature/stone');
+
+    assert.match(river?.body ?? '', /Meander Coat/, 'the River Atlas did not find the garment citing it');
+    assert.match(river?.body ?? '', /the hem follows a continuous curve/, 'the rule translation is not shown');
+    assert.ok(!(river?.body ?? '').includes('No garment'), 'the River Atlas still claims no garment derives from it');
+
+    // And only the Atlas that was cited. A section that lists every product
+    // regardless of its rule would connect nothing.
+    assert.ok(!(stone?.body ?? '').includes('Meander Coat'), 'the Stone Atlas claimed a garment citing the River');
+    assert.match(stone?.body ?? '', /No garment/, 'the Stone Atlas lost its absence state');
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+});
+
+test('§6 Product -> Atlas: the rule source is a link, and never a guessed one', () => {
+  // It was plain text: a reader told the garment comes from the River Atlas had
+  // no way to go and read it. Philosophy and product were on the same page and
+  // still not connected.
+  const linked = renderProductBody(
+    {
+      productId: 'PRD_x', code: 'OLB-CT-001', name: 'Coat', category: 'CT', summary: 'A fixture.',
+      variants: [], measurements: [], materials: [], productionLeadDays: 60,
+      naturalRule: { atlas: 'River Atlas', observation: 'o', translation: 't' },
+    } as never,
+    null,
+  );
+  assert.match(linked, /<a href="\/nature\/river">River Atlas<\/a>/);
+
+  // An Atlas this site does not publish renders as TEXT. Design_System.md
+  // records a Material Atlas as a planned expansion, so a product citing one is
+  // a real possibility — and a guessed `/nature/material` would be a 404 with a
+  // plausible name, the same failure as the two dead .md links arrived at more
+  // cleverly.
+  const unpublished = renderProductBody(
+    {
+      productId: 'PRD_y', code: 'OLB-CT-001', name: 'Coat', category: 'CT', summary: 'A fixture.',
+      variants: [], measurements: [], materials: [], productionLeadDays: 60,
+      naturalRule: { atlas: 'Material Atlas', observation: 'o', translation: 't' },
+    } as never,
+    null,
+  );
+  assert.match(unpublished, /<dd>Material Atlas<\/dd>/, 'an unpublished Atlas was not rendered as plain text');
+  assert.ok(!/href="[^"]*material/.test(unpublished), 'a link was guessed for an Atlas that does not exist');
+});
+
+test('§6: the three connections that remain blocked are not faked', () => {
+  // Article -> Product, Collection -> Atlas, and the Rule Layer overlay all
+  // depend on inputs that do not exist (journal articles, collections, Atlas
+  // field data). None of them is stubbed, and none of the built pages pretends
+  // otherwise.
+  const built = new Set(routes.map((r) => r.basePath));
+  for (const absent of ['/journal', '/collections', '/lookbook']) {
+    assert.ok(!built.has(absent), `${absent} was built without content to fill it`);
+  }
+  for (const route of routes) {
+    assert.ok(!/rule-layer|ruleLayer/i.test(route.body), `${route.path} ships a Rule Layer with no Atlas data`);
   }
 });

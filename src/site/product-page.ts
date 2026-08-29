@@ -21,6 +21,7 @@
 
 import { escapeHtml } from './markdown.ts';
 import { absentPhotography, awaiting, note } from './states.ts';
+import { atlasByTitle, atlasPath } from './atlases.ts';
 import type { Measurement, ProductRevision, Variant } from '../catalog/catalog.ts';
 import type { PreorderWindow } from '../preorder/run.ts';
 
@@ -207,10 +208,23 @@ export function renderProductBody(
   // --- meaning layer ------------------------------------------------------
   if (product.naturalRule !== null) {
     const rule = product.naturalRule;
+    // 03 §6's second connection: "Product → Atlas · Natural Rule block". The
+    // source was rendered as plain text, so a reader told that this garment
+    // comes from the River Atlas had no way to go and read it — the philosophy
+    // and the product were on the same page and still not connected.
+    //
+    // A title this site does not publish renders as text, never as a guessed
+    // link: `Design_System.md` records a Material Atlas as a planned expansion,
+    // so a product citing one is a real possibility and must not produce a 404.
+    const cited = atlasByTitle(rule.atlas);
+    const source = cited === null
+      ? escapeHtml(rule.atlas)
+      : `<a href="${atlasPath(cited)}">${escapeHtml(rule.atlas)}</a>`;
+
     parts.push('<h2>The natural rule</h2>');
     parts.push(
       '<dl class="facts">' +
-        `<dt>Source</dt><dd>${escapeHtml(rule.atlas)}</dd>` +
+        `<dt>Source</dt><dd>${source}</dd>` +
         `<dt>Observation</dt><dd>${escapeHtml(rule.observation)}</dd>` +
         `<dt>Translation</dt><dd>${escapeHtml(rule.translation)}</dd>` +
         '</dl>',

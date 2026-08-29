@@ -27,6 +27,7 @@ import { renderFigure } from './media.ts';
 import { awaiting, note } from './states.ts';
 import { renderSiblings, renderTrail, siblings, trail } from './wayfinding.ts';
 import { specimenAsset } from './specimen.ts';
+import { ATLASES, atlasPath, type AtlasSpec } from './atlases.ts';
 
 export interface Route {
   /** URL path. */
@@ -128,23 +129,16 @@ export function countAtlasDataRows(markdown: string): number {
     .length;
 }
 
-interface AtlasSpec {
-  readonly slug: string;
-  readonly file: string;
-  readonly title: string;
-  readonly description: string;
-}
-
-const ATLASES: readonly AtlasSpec[] = [
-  { slug: 'river', file: 'River_Atlas.md', title: 'River Atlas', description: 'Flow, curvature and reflection — what is studied, how it is measured, and what it yields.' },
-  { slug: 'stone', file: 'Stone_Atlas.md', title: 'Stone Atlas', description: 'Fracture, strata and edge geometry — the surface grammar of Olibana.' },
-  { slug: 'forest', file: 'Forest_Atlas.md', title: 'Forest Atlas', description: 'Branching, bark and canopy — hierarchical proportion drawn from growth.' },
-  { slug: 'light', file: 'Light_Atlas.md', title: 'Light Atlas', description: 'Time of day, season, shadow and atmosphere — the source of colour and material choice.' },
-];
-
-function atlasPage(atlas: AtlasSpec): Route {
+function atlasPage(atlas: AtlasSpec, published: readonly ProductRevision[]): Route {
   const source = doc(atlas.file);
   const rows = countAtlasDataRows(source);
+
+  // 03 §6's first cross-layer connection: "Atlas → Product · Garments from this
+  // rule". DERIVED, by matching each product's recorded `naturalRule.atlas`
+  // against this Atlas's title — so the day a garment is published citing this
+  // rule, it appears here without anyone remembering to add it. Today the
+  // catalogue is empty, so every Atlas shows an absence.
+  const derived = published.filter((product) => product.naturalRule?.atlas === atlas.title);
 
   const parts = [
     `<h1>${atlas.title}</h1>`,
@@ -163,6 +157,24 @@ function atlasPage(atlas: AtlasSpec): Route {
           'No field measurements',
           'have been recorded for this Atlas. The method above is the work; the readings follow it.',
         ),
+  );
+
+  parts.push('<h2>Garments from this rule</h2>');
+  parts.push(
+    derived.length === 0
+      ? awaiting(
+          'No garment',
+          `derives from the ${atlas.title} yet. When one does, it is listed here — the link is ` +
+            'made from the rule the garment records, not from a list anyone maintains.',
+        )
+      : '<ul class="index">' +
+        derived
+          .map((product) =>
+            `<li><a href="/products/${productSlug(product)}">` +
+            `<span class="index-title">${escapeHtml(product.name)}</span>` +
+            `<span class="index-note">${escapeHtml(product.naturalRule?.translation ?? '')}</span></a></li>`)
+          .join('') +
+        '</ul>',
   );
 
   return {
@@ -624,7 +636,7 @@ function baseRoutes(
       return productPage(p, open === null ? null : preorderWindow(open));
     }),
     naturePage(),
-    ...ATLASES.map(atlasPage),
+    ...ATLASES.map((atlas) => atlasPage(atlas, published)),
     philosophyPage(),
     designLanguagePage(),
     accessibilityPage(),
