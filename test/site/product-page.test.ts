@@ -96,9 +96,25 @@ test('the decision layer precedes the natural rule', () => {
   assert.match(body, /River Atlas/);
 });
 
-test('an absent natural rule leaves the section out rather than filling it', () => {
+test('an absent natural rule is disclosed, not omitted and not filled in', () => {
+  // This was the reverse until cycle 31: the section was left out entirely, so a
+  // garment whose rule has not been written yet looked identical to a page that
+  // never had one. Every other gap on this site renders through `awaiting()`;
+  // this was the last exception.
   const body = renderProductBody({ ...fixture({ naturalRule: null }), eventId: 'EVT_x', recordedAt: 'now' });
-  assert.ok(!/The natural rule/.test(body));
+
+  assert.match(body, /<h2>The natural rule<\/h2>/, 'the absence was hidden by omitting the section');
+  assert.match(body, /state-awaiting/, 'the gap was not marked as an absence');
+  assert.match(body, /No natural rule/);
+
+  // Disclosed, not filled: none of the rule's three fields may be fabricated.
+  assert.ok(!/<dt>Source<\/dt>/.test(body), 'a source was invented for a garment with no rule');
+  assert.ok(!/<dt>Observation<\/dt>/.test(body), 'an observation was invented');
+  assert.ok(!/<dt>Translation<\/dt>/.test(body), 'a translation was invented');
+  // And no Atlas is named, which would imply a derivation nobody recorded.
+  for (const atlas of ['River Atlas', 'Stone Atlas', 'Forest Atlas', 'Light Atlas']) {
+    assert.ok(!body.includes(atlas), `${atlas} was named on a garment with no recorded rule`);
+  }
 });
 
 test('unrecorded measurements are disclosed, never invented', () => {
@@ -131,6 +147,81 @@ test('product content is escaped', () => {
   });
   assert.ok(!body.includes('<script>'));
   assert.match(body, /a &amp; b/);
+});
+
+// --- related navigation -------------------------------------------------
+//
+// The renderer's `related` argument defaults to empty, so nothing in the unit
+// tests above can prove the SHIPPED page has onward navigation. These read the
+// built file. Before cycle 31 a product page's only outbound links were the
+// header and footer chrome — the leaf of the hierarchy was a dead end.
+
+/**
+ * The related-navigation block alone.
+ *
+ * Scoping matters, and a surviving mutant proved it: a mutation that dropped
+ * the Atlas destination from this block left every assertion passing, because
+ * the site header carries a "Nature" link and `page.includes('/en/nature')` was
+ * happily matching the chrome. A test that cannot tell the block it is about
+ * from the furniture around it verifies nothing.
+ */
+function related(page: string): string {
+  const start = page.indexOf('<h2>Where this leads</h2>');
+  if (start === -1) return '';
+  const end = page.indexOf('</ul>', start);
+  return end === -1 ? page.slice(start) : page.slice(start, end);
+}
+
+test('a built product page sends the reader on to the Atlas it cites and to the method', () => {
+  const { out } = siteWith([
+    fixture({
+      naturalRule: { atlas: 'River Atlas', observation: 'meander curvature', translation: 'a continuous hem curve' },
+    }),
+  ]);
+  const page = readFileSync(resolve(out, 'en/products/olb-ct-001/index.html'), 'utf8');
+
+  const block = related(page);
+  assert.notEqual(block, '', 'the product page has no related navigation');
+  // Localised, like every other content link — a related block that left `/en/`
+  // is the bug ADR-010 exists to prevent.
+  assert.match(block, /href="\/en\/nature\/river"/, 'the cited Atlas is not reachable from the product');
+  assert.match(block, /href="\/en\/olibana\/design-language"/, 'the method page is not reachable');
+
+  // Titles and notes come from the destination routes, never retyped here.
+  const atlas = buildRoutes().find((r) => r.basePath === '/nature/river');
+  assert.ok(atlas !== undefined, 'the River Atlas route is gone');
+  assert.ok(
+    related(page).includes(atlas.description),
+    'the Atlas is described differently from how it describes itself',
+  );
+});
+
+test('a product with no recorded rule is sent to the Atlases, not to a guessed one', () => {
+  const { out } = siteWith([fixture({ naturalRule: null })]);
+  const page = readFileSync(resolve(out, 'en/products/olb-ct-001/index.html'), 'utf8');
+
+  const block = related(page);
+  assert.notEqual(block, '', 'the product page has no related navigation');
+  assert.match(block, /href="\/en\/nature"/, 'a ruleless garment lost its way into the Atlases');
+  assert.ok(
+    !/href="\/en\/nature\/[a-z]/.test(block),
+    'a specific Atlas was linked from a garment that cites none',
+  );
+});
+
+test('an Atlas this site does not publish produces no link, in the related block either', () => {
+  // `Design_System.md` records a Material Atlas as a planned expansion, so a
+  // product citing one is a real possibility. A guessed `/nature/material` would
+  // be a 404 with a plausible name.
+  const { out } = siteWith([
+    fixture({ naturalRule: { atlas: 'Material Atlas', observation: 'o', translation: 't' } }),
+  ]);
+  const page = readFileSync(resolve(out, 'en/products/olb-ct-001/index.html'), 'utf8');
+
+  const block = related(page);
+  assert.ok(!/href="[^"]*material/i.test(page), 'a route was guessed for an Atlas that does not exist');
+  assert.match(block, /href="\/en\/nature"/, 'the reader was left with nowhere to read about the rule');
+  assert.match(block, /href="\/en\/olibana\/design-language"/, 'the method page went with it');
 });
 
 test('a product page passes the same structural checks as every other page', () => {

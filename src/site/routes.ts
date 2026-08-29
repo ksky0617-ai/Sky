@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { escapeHtml, extractSection, renderMarkdown, type DocumentRoutes } from './markdown.ts';
-import { renderProductBody } from './product-page.ts';
+import { renderProductBody, type Related } from './product-page.ts';
 import { Catalog, type ProductRevision } from '../catalog/catalog.ts';
 import { PreorderRunStore, preorderWindow, type PreorderWindow } from '../preorder/run.ts';
 import { FileStorage } from '../persistence/file-storage.ts';
@@ -27,7 +27,8 @@ import { renderFigure } from './media.ts';
 import { awaiting, note } from './states.ts';
 import { renderSiblings, renderTrail, siblings, trail } from './wayfinding.ts';
 import { specimenAsset } from './specimen.ts';
-import { ATLASES, atlasPath, type AtlasSpec } from './atlases.ts';
+import { rootTokens } from './styles.ts';
+import { ATLASES, atlasByTitle, atlasPath, type AtlasSpec } from './atlases.ts';
 
 export interface Route {
   /** URL path. */
@@ -78,6 +79,15 @@ export interface Route {
    * rather than being silently left out of the index.
    */
   readonly search?: SearchDocument | null;
+  /**
+   * The route this one sits under, when the URL does not say so.
+   *
+   * A product lives at `/products/[slug]` and belongs under `/shop`; 03 §5 puts
+   * the index and the items at different addresses deliberately. Set only where
+   * the URL and the information architecture disagree — everywhere else the
+   * path is the hierarchy and this stays undefined.
+   */
+  readonly parent?: string;
   /** Which locale serves this route — ADR-010. */
   readonly locale: string;
   /**
@@ -100,7 +110,14 @@ const doc = (relativePath: string): string => readFileSync(resolve(ROOT, relativ
  * on a published page. Two of them shipped.
  */
 function documentRoutes(): DocumentRoutes {
-  return Object.fromEntries(ATLASES.map((atlas) => [atlas.file, `/nature/${atlas.slug}`]));
+  return {
+    ...Object.fromEntries(ATLASES.map((atlas) => [atlas.file, `/nature/${atlas.slug}`])),
+    // README.md's Design Principles ends "see Design_System.md for the full
+    // evaluation criteria", and the Design Language page is where those criteria
+    // are published. The reference was rendering unlinked — correct, but it left
+    // the sentence pointing at a file the reader has no way to open.
+    'Design_System.md': '/olibana/design-language',
+  };
 }
 
 function section(relativePath: string, heading: string): string {
@@ -288,6 +305,14 @@ function naturePage(): Route {
 }
 
 function philosophyPage(): Route {
+  // Four sections, in the order the argument actually runs: why, the rules,
+  // where the rules come from, and what happens to a rule afterwards.
+  //
+  // The last two are the ones that were missing. Without them the page stated a
+  // philosophy and stopped — a reader was told that every form must trace to a
+  // measurable structure, and never told where those measurements live or what
+  // stands between a rule and a garment. Both answers already existed in the
+  // source documents; neither was on the site.
   const body = [
     '<h1>Philosophy</h1>',
     `<div class="lede">${section('README.md', 'Project Vision')}</div>`,
@@ -295,6 +320,23 @@ function philosophyPage(): Route {
     section('README.md', 'Core Philosophy'),
     '<h2>Design principles</h2>',
     section('README.md', 'Design Principles'),
+
+    // The relationship to the Atlases. The section names all four and links to
+    // them, and those links become site links through `documentRoutes()` — so
+    // the page that explains why the Atlases exist is the page that reaches
+    // them.
+    '<h2>Where the rules come from</h2>',
+    section('README.md', 'Design Research System'),
+
+    // The relationship to construction. Seven steps from an Atlas rule to an
+    // approved design, and a checklist that has to be satisfied before anything
+    // is made. This is the answer to "so what?" — and it is also why this site
+    // has no garment on it: step 7 has not been reached.
+    '<h2>From a rule to a garment</h2>',
+    section('Design_System.md', 'Design Iteration Process'),
+    '<div class="lede"><p>A design that cannot name its Atlas origin fails the first criterion and is ' +
+      'rejected before evaluation continues. Nothing has passed step seven yet, which is why nothing ' +
+      'is offered for sale.</p></div>',
   ].join('\n');
 
   return {
@@ -311,20 +353,89 @@ function philosophyPage(): Route {
   };
 }
 
+/**
+ * A table of design tokens, read from the stylesheet this page is served in.
+ *
+ * The values are not written here. `rootTokens` reads them back out of
+ * `stylesheet`, so the page documents the system that is actually running
+ * rather than one that was true when somebody typed it out.
+ */
+/**
+ * The measure, as the stylesheet states it. Read rather than written, because a
+ * page that says "68 characters" beside a token that says 72 is worse than a
+ * page that says nothing.
+ */
+function measureToken(): string {
+  const measure = rootTokens('--measure')[0];
+  if (measure === undefined) {
+    throw new Error('--measure is not defined — the Design Language page describes it');
+  }
+  return measure.value.replace(/ch$/, ' characters');
+}
+
+function tokenTable(tokens: ReadonlyArray<{ name: string; value: string }>): string {
+  const rows = tokens
+    .map((t) => `<tr><th><code>${escapeHtml(t.name)}</code></th><td>${escapeHtml(t.value)}</td></tr>`)
+    .join('');
+  return `<div class="table-scroll"><table><thead><tr><th>Token</th><th>Value</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table></div>`;
+}
+
 function designLanguagePage(): Route {
   const body = [
     '<h1>Design Language</h1>',
     '<div class="lede"><p>Design rules are applied, then checked. These are the checks a piece has to pass ' +
-      'before it is made.</p></div>',
+      'before it is made — and, below them, the values this site itself is built from.</p></div>',
     '<h2>The language</h2>',
     section('Design_System.md', 'Unified Design Language'),
     '<h2>Evaluation criteria</h2>',
     section('Design_System.md', 'Evaluation Criteria'),
+
+    // --- the system this page is served in --------------------------------
+    // Everything below documents the running site rather than an intention.
+    // Each block reads its values from the stylesheet, so this section cannot
+    // describe a system the pages do not use.
+    '<h2>Colour and type</h2>',
+    '<div class="lede"><p>The palette is a construction palette: six neutral steps, deliberately hueless. ' +
+      'The brand palette is undetermined until the Light Atlas is measured, and a coloured stand-in ' +
+      'would become a decision by familiarity rather than by measurement. The type scale is a ' +
+      'provisional 1.25 ratio, for the same reason — the intended ratio comes from a Forest Atlas ' +
+      'branching measurement that does not exist yet.</p></div>',
     // The one image on this site, and the only one that can be true today.
     // Placed here rather than on the home page because this is the page ABOUT
     // the design system: a specimen belongs beside the thing it specifies.
     // Not lazy — it is the page's primary visual and sits near the top.
     renderFigure(specimenAsset(), { lazy: false }),
+
+    '<h2>Spacing</h2>',
+    '<div class="lede"><p>An 8&nbsp;px base with a 4&nbsp;px half step, and nothing between them. ' +
+      'Every margin, gap and inset on this site is one of these fourteen values, which is what makes ' +
+      'the rhythm of a page a decision rather than an accumulation of nudges.</p></div>',
+    tokenTable(rootTokens('--space-')),
+
+    '<h2>Motion</h2>',
+    section('docs/website/04_MOTION_LANGUAGE.md', '1. Position'),
+    '<div class="lede"><p>Five phenomena, each with its own duration and easing. The values below are ' +
+      'derived from the qualitative observations already written in the Atlases, not from field ' +
+      'measurement — which has not happened. They are revisited when it does.</p></div>',
+    tokenTable(rootTokens('--motion-')),
+
+    '<h2>How this serves the writing</h2>',
+    '<div class="lede"><p>The visual system exists to make the text readable, and it gives up whatever ' +
+      'it has to in order to do that.</p></div>',
+    '<ul>',
+    '<li>Prose is capped at ' + escapeHtml(measureToken()) + ', so a line never grows past the width an eye ' +
+      'tracks comfortably however wide the window is.</li>',
+    '<li>Hierarchy is made with space and a rule, not with weight or colour. Both of those are ' +
+      'constrained harder than scale is, and space is the one that survives a palette change.</li>',
+    '<li>No text is ever revealed by motion. Every reveal moves an element that is already painted, ' +
+      'and the resting style is the final style — checked by ' +
+      '<code>findLoadBearingMotion</code> over the stylesheet, and again in a browser by measuring ' +
+      'the opacity of every element at rest with no scrolling performed.</li>',
+    '<li>Every rendered size sits on the scale above. Two that did not — a code element at 14.4&nbsp;px ' +
+      'and the checkout pages at 22.4&nbsp;px — were found by measuring the built pages, not by reading ' +
+      'the source.</li>',
+    '</ul>',
   ].join('\n');
 
   return {
@@ -432,13 +543,46 @@ function productSlug(product: ProductRevision): string {
   return product.code.toLowerCase();
 }
 
-function productPage(product: ProductRevision, run: PreorderWindow | null): Route {
+/**
+ * Where a product page sends the reader on, derived from routes that exist.
+ *
+ * Two destinations, both answering a question the product page raises and
+ * neither answering it on the product page:
+ *
+ *   the rule    the Atlas this garment cites, when this site publishes it;
+ *               otherwise `/nature`, which is where the Atlases are. A cited
+ *               Atlas that is not published gets no link of its own — same
+ *               reason as the rule block: a guessed `/nature/material` is a 404
+ *               with a plausible name.
+ *   the method  Design Language, the page about how any of this is decided.
+ *
+ * Both entries carry the destination route's own title and description. A route
+ * that is not in `pages` produces no entry rather than a dead link, which is why
+ * this takes the built pages instead of writing paths down.
+ */
+function relatedTo(product: ProductRevision, pages: readonly Route[]): readonly Related[] {
+  const byPath = (path: string): Route | undefined => pages.find((r) => r.basePath === path);
+  const cited = product.naturalRule === null ? null : atlasByTitle(product.naturalRule.atlas);
+
+  return [cited === null ? '/nature' : atlasPath(cited), '/olibana/design-language']
+    .map(byPath)
+    .filter((route): route is Route => route !== undefined)
+    .map((route) => ({ path: route.basePath, title: route.title, note: route.description }));
+}
+
+function productPage(
+  product: ProductRevision,
+  run: PreorderWindow | null,
+  related: readonly Related[],
+): Route {
   return {
     // A product's entry carries the recorded natural rule and the Atlas behind
     // it — §7's whole reason for indexing both from the start. Passed through
     // from the catalogue, never derived: `null` until a Fashion Specification
     // supplies one.
     search: indexProduct(product, `/products/${productSlug(product)}`),
+    // The URL says nothing about where this sits; 03 §2 puts it under Shop.
+    parent: '/shop',
     path: `/products/${productSlug(product)}`,
     basePath: `/products/${productSlug(product)}`,
     locale: DEFAULT_LOCALE,
@@ -447,7 +591,7 @@ function productPage(product: ProductRevision, run: PreorderWindow | null): Rout
     file: `products/${productSlug(product)}/index.html`,
     title: product.name,
     description: product.summary,
-    body: renderProductBody(product, run),
+    body: renderProductBody(product, run, related),
   };
 }
 
@@ -518,13 +662,16 @@ function withWayfinding(route: Route, code: string, all: readonly Route[]): stri
   // 03 §4 "Current location always indicated". The nav marks a section; it says
   // nothing on a nested page, because River is not a nav item.
   const labels = new Map(all.map((r) => [r.basePath, r.title]));
-  const steps = trail(route.basePath, labels);
+  const steps = trail(route.basePath, labels, route.parent);
 
   // Siblings within a section: the routes sharing this one's parent path.
-  const parent = route.basePath.slice(0, route.basePath.lastIndexOf('/'));
-  const section = parent === ''
-    ? []
-    : all.filter((r) => r.basePath.startsWith(`${parent}/`) && r.basePath !== parent);
+  // Siblings share a section. For most routes the section is the URL prefix;
+  // for a product it is whatever the route declared as its parent, so the four
+  // garments in a shop are siblings even though their addresses are flat.
+  const parent = route.parent ?? route.basePath.slice(0, route.basePath.lastIndexOf('/'));
+  const section = route.parent === undefined
+    ? (parent === '' ? [] : all.filter((r) => r.basePath.startsWith(`${parent}/`) && r.basePath !== parent))
+    : all.filter((r) => r.parent === route.parent);
   const { previous, next } = siblings(section, route.basePath);
 
   return [
@@ -628,18 +775,26 @@ function baseRoutes(
   const published = new Catalog(new FileStorage(catalogPath)).published();
   const runs = new PreorderRunStore(new FileStorage(runsPath));
 
-  const pages = [
-    homePage(),
-    ...(published.length > 0 ? [shopPage(published)] : []),
-    ...published.map((p) => {
-      const open = runs.openRunFor(p.productId);
-      return productPage(p, open === null ? null : preorderWindow(open));
-    }),
+  // The pages a product links onward to are built FIRST, so a product's related
+  // navigation is drawn from routes that exist rather than from paths written
+  // down twice. The emitted order below is unchanged — the 404 lists the site in
+  // manifest order, and that order is a reader-facing decision.
+  const world = [
     naturePage(),
     ...ATLASES.map((atlas) => atlasPage(atlas, published)),
     philosophyPage(),
     designLanguagePage(),
     accessibilityPage(),
+  ];
+
+  const pages = [
+    homePage(),
+    ...(published.length > 0 ? [shopPage(published)] : []),
+    ...published.map((p) => {
+      const open = runs.openRunFor(p.productId);
+      return productPage(p, open === null ? null : preorderWindow(open), relatedTo(p, world));
+    }),
+    ...world,
   ];
 
   // The 404 is built last, from everything above it, so it lists what the site

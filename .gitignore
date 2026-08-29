@@ -2,3 +2,10 @@ node_modules/
 .DS_Store
 *.log
 dist/
+
+# Runtime logs. `data/catalog.jsonl`, `data/orders.jsonl` and
+# `data/preorder-runs.jsonl` are append-only state written by a running system,
+# not source. Committing them would put a catalogue in the repository, and the
+# suite asserts THIS repository publishes no product — so a stray commit here
+# would turn a fixture into a published garment.
+data/

@@ -15,8 +15,16 @@
  *      won.
  *
  *   2. An absent fact is shown as absent. No measurement is estimated, no
- *      delivery date is implied, and a missing Natural Rule leaves the section
- *      out rather than filling it with prose.
+ *      delivery date is implied, and a missing Natural Rule is DISCLOSED rather
+ *      than either invented or omitted.
+ *
+ *      That second half changed. The section used to be left out entirely when
+ *      `naturalRule` was null, which reads exactly like a page that never had a
+ *      rule to show — the reader cannot tell "this garment's rule has not been
+ *      written yet" from "this brand does not do that here". It is the same
+ *      failure the Atlas measurements had before cycle 28, and every other gap
+ *      on this site is rendered through `awaiting()`. The rule block was the one
+ *      exception, so it stopped being one.
  */
 
 import { escapeHtml } from './markdown.ts';
@@ -24,6 +32,20 @@ import { absentPhotography, awaiting, note } from './states.ts';
 import { atlasByTitle, atlasPath } from './atlases.ts';
 import type { Measurement, ProductRevision, Variant } from '../catalog/catalog.ts';
 import type { PreorderWindow } from '../preorder/run.ts';
+
+/**
+ * One onward destination, taken from the route that serves it.
+ *
+ * `title` and `note` are the route's own `title` and `description`. They are not
+ * written here, because a second copy of "what the Design Language page is
+ * about" would drift from the page — and 03 §4 requires navigation to be
+ * generated from the manifest rather than maintained beside it.
+ */
+export interface Related {
+  readonly path: string;
+  readonly title: string;
+  readonly note: string;
+}
 
 export function formatPrice(amount: number, currency: string): string {
   // Minor units to major. Zero-decimal currencies keep their integer form.
@@ -141,10 +163,17 @@ function stateDate(iso: string): string {
  * the garment is promised — instead of an approximate number of days. Both come
  * from the recorded run, which cannot be opened without them (ADR-003), so this
  * page cannot state a window that nobody committed to.
+ *
+ * `related` is the onward navigation, supplied by the route manifest. It
+ * defaults to empty because a renderer invoked without a manifest — as the unit
+ * tests do — has no routes to point at, and inventing two here would be the
+ * hand-written duplicate hierarchy 03 §4 forbids. What guarantees the real page
+ * carries it is a build-level test, not this signature.
  */
 export function renderProductBody(
   product: ProductRevision,
   run: PreorderWindow | null = null,
+  related: readonly Related[] = [],
 ): string {
   const sizes = [...new Set(product.variants.map((v) => v.size))];
   const price = priceRange(product.variants);
@@ -206,7 +235,20 @@ export function renderProductBody(
   parts.push(measurementsTable(product.measurements, sizes));
 
   // --- meaning layer ------------------------------------------------------
-  if (product.naturalRule !== null) {
+  parts.push('<h2>The natural rule</h2>');
+  if (product.naturalRule === null) {
+    // Named, not filled. The reason is real and checkable: R-02 in
+    // RISK_REGISTER.md records that no Fashion Specification exists, and the
+    // rule is a field that document supplies. Nothing here estimates when.
+    parts.push(
+      awaiting(
+        'No natural rule',
+        'has been recorded for this garment. The rule names the Atlas a form is derived from, ' +
+          'and it is written into the Fashion Specification when a design is approved — not ' +
+          'reconstructed afterwards from the garment.',
+      ),
+    );
+  } else {
     const rule = product.naturalRule;
     // 03 §6's second connection: "Product → Atlas · Natural Rule block". The
     // source was rendered as plain text, so a reader told that this garment
@@ -221,13 +263,34 @@ export function renderProductBody(
       ? escapeHtml(rule.atlas)
       : `<a href="${atlasPath(cited)}">${escapeHtml(rule.atlas)}</a>`;
 
-    parts.push('<h2>The natural rule</h2>');
     parts.push(
       '<dl class="facts">' +
         `<dt>Source</dt><dd>${source}</dd>` +
         `<dt>Observation</dt><dd>${escapeHtml(rule.observation)}</dd>` +
         `<dt>Translation</dt><dd>${escapeHtml(rule.translation)}</dd>` +
         '</dl>',
+    );
+  }
+
+  // --- related navigation -------------------------------------------------
+  // The last thing on the page, and the only outbound route from it that is not
+  // header or footer chrome. Every entry is a real route the manifest built,
+  // carrying that route's own title and description, so this block cannot name
+  // a page that does not exist or describe one differently from how it
+  // describes itself.
+  if (related.length > 0) {
+    parts.push('<h2>Where this leads</h2>');
+    parts.push(
+      '<ul class="index">' +
+        related
+          .map(
+            (link) =>
+              `<li><a href="${escapeHtml(link.path)}">` +
+              `<span class="index-title">${escapeHtml(link.title)}</span>` +
+              `<span class="index-note">${escapeHtml(link.note)}</span></a></li>`,
+          )
+          .join('') +
+        '</ul>',
     );
   }
 

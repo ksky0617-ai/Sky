@@ -19,7 +19,7 @@ import { build } from '../../src/site/build.ts';
 import { buildRoutes } from '../../src/site/routes.ts';
 import { awaiting, absentPhotography, note } from '../../src/site/states.ts';
 import { renderSiblings, renderTrail, siblings, trail } from '../../src/site/wayfinding.ts';
-import { declarations, stylesheet } from '../../src/site/styles.ts';
+import { declarations, rootTokens, stylesheet } from '../../src/site/styles.ts';
 
 const outDir = mkdtempSync(resolve(tmpdir(), 'olibana-ui-'));
 const result = build({ outDir });
@@ -264,4 +264,124 @@ test('every measurement the accessibility page claims is one that actually runs'
     !/no colour-contrast validation\s+has been run/i.test(page),
     'the page reinstated a claim that has been false since the contrast sweep was built',
   );
+});
+
+// --- content depth: the pages that document the system -------------------
+//
+// The Design Language page publishes the spacing and motion tokens, and the
+// Philosophy page publishes where the rules come from and what happens to one
+// afterwards. Both are new, and both have the same failure mode: a page that
+// documents a system it cannot see will eventually describe a different one.
+
+test('the spacing scale on the page is the spacing scale in the stylesheet', () => {
+  const page = html('en/olibana/design-language/index.html');
+  const tokens = rootTokens('--space-');
+
+  assert.ok(tokens.length >= 10, 'the spacing scale vanished from the stylesheet');
+  for (const { name, value } of tokens) {
+    assert.ok(
+      page.includes(`<code>${name}</code></th><td>${value}</td>`),
+      `${name}: ${value} is in the stylesheet and not on the page that documents it`,
+    );
+  }
+});
+
+test('the motion tokens on the page are the motion tokens in the stylesheet', () => {
+  const page = html('en/olibana/design-language/index.html');
+  const tokens = rootTokens('--motion-');
+
+  assert.ok(tokens.length >= 10, 'the motion tokens vanished from the stylesheet');
+  for (const { name, value } of tokens) {
+    // Values carry commas and parentheses (cubic-bezier), so compare escaped.
+    const escaped = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    assert.ok(
+      page.includes(`<code>${name}</code></th><td>${escaped}</td>`),
+      `${name}: ${value} is in the stylesheet and not on the page that documents it`,
+    );
+  }
+});
+
+test('a light-state redefinition is not published as if it were the scale', () => {
+  // `rootTokens` reads BARE :root only. The palette roles are redefined under
+  // [data-light="dusk"] and under prefers-color-scheme, and a page that listed
+  // every match would show the same token twice with two different values and
+  // no way to tell which one it is served in.
+  const dusk = declarations(stylesheet).filter(
+    (d) => d.selector.includes('data-light') || d.atRules.some((a) => a.includes('prefers-color-scheme')),
+  );
+  assert.ok(dusk.length > 0, 'no light-state redefinitions exist — this test is measuring nothing');
+
+  // Every entry returned is the value BARE :root gives it — never a state's.
+  for (const { name, value } of rootTokens('--')) {
+    const bare = declarations(stylesheet).filter(
+      (d) => d.property === name && d.selector === ':root' && d.atRules.length === 0,
+    );
+    assert.ok(bare.length > 0, `${name} was returned but is not declared on bare :root`);
+    assert.equal(value, bare[bare.length - 1]?.value, `${name} was returned with a state's value`);
+  }
+});
+
+test('the measure the page states is the measure the stylesheet applies', () => {
+  const page = html('en/olibana/design-language/index.html');
+  const measure = rootTokens('--measure')[0];
+  assert.ok(measure !== undefined, '--measure is gone and the page still describes it');
+  const stated = measure.value.replace(/ch$/, ' characters');
+  assert.ok(
+    page.includes(stated),
+    `the page describes a measure other than ${measure.value}`,
+  );
+});
+
+test('every check the Design Language page claims is one that actually runs', () => {
+  // Same discipline as the accessibility page. This section makes assertions
+  // about enforcement, and an unenforced assertion about enforcement is the
+  // worst kind of copy this site can carry.
+  const page = html('en/olibana/design-language/index.html');
+  const visualCheck = readFileSync(resolve(import.meta.dirname, '../../scripts/visual-check.mjs'), 'utf8');
+  const styles = readFileSync(resolve(import.meta.dirname, '../../src/site/styles.ts'), 'utf8');
+
+  assert.match(page, /<h2>How this serves the writing<\/h2>/, 'the section is gone or renamed');
+
+  assert.match(page, /findLoadBearingMotion/, 'the page stopped naming the check behind its motion claim');
+  assert.match(styles, /export function findLoadBearingMotion/, 'the page names a check that no longer exists');
+
+  assert.match(page, /opacity of every element at rest/, 'the resting-opacity claim is gone');
+  assert.match(visualCheck, /are not fully painted at rest/, 'the page claims a sweep that no longer runs');
+
+  assert.match(page, /Every rendered size sits on the scale/, 'the type-scale claim is gone');
+  assert.match(visualCheck, /are not on the scale/, 'the page claims an off-scale check that no longer runs');
+});
+
+test('Philosophy reaches the Atlases it says every form traces to', () => {
+  const page = html('en/olibana/philosophy/index.html');
+  assert.match(page, /<h2>Where the rules come from<\/h2>/);
+  for (const slug of ['river', 'stone', 'forest', 'light']) {
+    assert.match(
+      page, new RegExp(`href="/en/nature/${slug}"`),
+      `the page names the ${slug} Atlas and gives the reader no way to reach it`,
+    );
+  }
+});
+
+test('Philosophy says what stands between a rule and a garment', () => {
+  const page = html('en/olibana/philosophy/index.html');
+  assert.match(page, /<h2>From a rule to a garment<\/h2>/);
+  // The seven steps, read from Design_System.md rather than retyped: the first
+  // and the last are the load-bearing ones for this site's honesty, because the
+  // reason nothing is for sale is that step seven has not happened.
+  assert.match(page, /Research &amp; Inspiration/);
+  assert.match(page, /Finalize &amp; Approve/);
+  assert.match(page, /Nothing has passed step seven yet/);
+});
+
+test('a document reference resolves to the page that publishes it, or to no link', () => {
+  // README's Design Principles ends "see Design_System.md for the full
+  // evaluation criteria", and that page exists. The reference was rendering
+  // unlinked — honest, but it left the sentence pointing at a file the reader
+  // cannot open.
+  const page = html('en/olibana/philosophy/index.html');
+  assert.match(page, /href="\/en\/olibana\/design-language"><code>Design_System\.md<\/code>/);
+  // And no .md address survives onto a published page, which is the rule that
+  // reference was obeying in the first place.
+  assert.ok(!/href="[^"]*\.md"/.test(page), 'a .md link shipped');
 });

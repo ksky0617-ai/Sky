@@ -222,6 +222,13 @@ const routes = [
   // The one route carrying an image. Its aspect box, its contrast in both light
   // states and its effect on CLS are the reason it is measured separately.
   ['design-language', '/en/olibana/design-language'],
+  // The page that states what has been measured, which until cycle 31 was the
+  // one content route this measurement never rendered. Found while building a
+  // control case: a deliberately undersized target was planted on it and
+  // nothing reported it, because nothing was looking at the page at all. A
+  // conformance claim published on an unmeasured page is the exact failure this
+  // script exists to prevent.
+  ['accessibility', '/en/legal/accessibility'],
   // Deliberately short. A page that cannot scroll leaves every scroll-driven
   // timeline INACTIVE, which is the state a static check cannot reason about
   // and the one most likely to hold an element at its first keyframe.
@@ -265,12 +272,25 @@ for (const [name, path] of routes) {
       // failure that is not one — which is worse than missing a real failure,
       // because the fix would have damaged the typography to satisfy a rule
       // that never applied.
+      //
+      // The container is the nearest BLOCK ancestor, reached by climbing past
+      // inline formatting. The first version read `parentElement` directly,
+      // which meant `<li><strong><a>River Atlas</a></strong> — Fluid flow…</li>`
+      // failed the check: the parent was STRONG, STRONG is not in the list, so
+      // a link sitting in the middle of a sentence was reported as an isolated
+      // 19px target. Four of them, on every viewport and both colour schemes.
+      // The threshold was right and the measurement was wrong — bolding a link
+      // does not take it out of its sentence.
+      const INLINE_WRAPPERS = ['STRONG', 'EM', 'B', 'I', 'CODE', 'SPAN', 'SMALL', 'ABBR', 'U', 'MARK', 'SUP', 'SUB'];
       const inSentence = (el) => {
-        const parent = el.parentElement;
+        let parent = el.parentElement;
+        while (parent !== null && INLINE_WRAPPERS.includes(parent.tagName)) parent = parent.parentElement;
         if (parent === null) return false;
         if (!['P', 'LI', 'TD', 'BLOCKQUOTE', 'DD', 'FIGCAPTION'].includes(parent.tagName)) return false;
         // Only when there is other text around it. A paragraph containing
-        // nothing but the link is a block target, and the exception is spent.
+        // nothing but the link is a block target, and the exception is spent —
+        // and that stays true through a wrapper, because the text compared is
+        // the container's, not the wrapper's.
         const own = (el.textContent || '').trim();
         const surrounding = (parent.textContent || '').trim();
         return surrounding.length > own.length;

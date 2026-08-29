@@ -37,10 +37,29 @@ export interface Step {
 export function trail(
   basePath: string,
   known: ReadonlyMap<string, string>,
+  declaredParent?: string,
 ): readonly Step[] {
   if (basePath === '/') return [];
 
   const steps: Step[] = [{ path: '/', label: 'Olibana' }];
+
+  // Where the URL and the information architecture genuinely disagree, the
+  // route says so. A product lives at `/products/olb-ct-001` and belongs under
+  // `/shop` — 03 §5 puts the index and the items at different addresses on
+  // purpose ("category as filter, not route") — so a purely path-derived trail
+  // read "Olibana / Fixture Coat" and dropped the section the reader came
+  // through.
+  //
+  // This is ONE optional field on the routes where that is true, not a second
+  // hierarchy: it is still read from the manifest, it still resolves through
+  // `known`, and a parent that is not a real page is still skipped rather than
+  // invented.
+  if (declaredParent !== undefined) {
+    const label = known.get(declaredParent);
+    if (label !== undefined) steps.push({ path: declaredParent, label });
+    return steps;
+  }
+
   const segments = basePath.split('/').filter((s) => s !== '');
 
   // Every prefix except the last, which is the page itself.

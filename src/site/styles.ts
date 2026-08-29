@@ -703,6 +703,30 @@ figure.media figcaption {
 `.trim();
 
 /**
+ * The `:root` custom properties whose names begin with `prefix`, in source
+ * order, with their literal values.
+ *
+ * The Design Language page documents the spacing and motion systems, and this
+ * is how it gets the numbers. Reading them back out of the stylesheet is not
+ * indirection for its own sake: the alternative is a page that lists `8px`
+ * beside a token that has since become `10px`, which is the second-copy failure
+ * this repository has already hit with the motion tokens, the search index and
+ * the router's type scale. A page that documents a system it cannot see is a
+ * page that will eventually describe a different one.
+ *
+ * Bare `:root` only. The light-state blocks redefine roles, and a page
+ * documenting "the spacing scale" must not show it twice under two states.
+ */
+export function rootTokens(prefix: string, css: string = stylesheet): ReadonlyArray<{
+  readonly name: string;
+  readonly value: string;
+}> {
+  return declarations(css)
+    .filter((d) => d.selector === ':root' && d.atRules.length === 0 && d.property.startsWith(prefix))
+    .map(({ property, value }) => ({ name: property, value }));
+}
+
+/**
  * Production guard — 05_VISUAL_SYSTEM.md §2.
  * The construction palette must never ship. Returns the offending token names.
  */
