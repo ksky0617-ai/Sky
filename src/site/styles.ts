@@ -271,11 +271,40 @@ nav.primary a:hover, nav.primary a[aria-current="page"] {
   color: var(--content-primary); border-bottom-color: var(--line-rule);
 }
 
-main { display: block; padding: var(--space-9) 0 var(--space-12); }
+/* ONE column, and this is the rule that makes it one.
+
+   Every page carried two widths. Prose capped at --measure (~630px); tables,
+   preformatted blocks, index lists and figures took the full 1280px container.
+   So a browser at desktop showed a paragraph ending halfway across the page and
+   directly beneath it a two-column table stretched to twice that, its columns
+   flung apart to fill space nothing else used. It was not visible in any
+   markup: both widths were correct in isolation, and only a screenshot puts
+   them beside each other.
+
+   Capping main means the wide things now agree with the writing, and the
+   things that genuinely need more room — a wide table — scroll inside their own
+   container, which is what .table-scroll was built for and what the
+   accessibility page already claims happens. No content width is invented: it
+   is the reading measure, which was always the width the page was set to. */
+main { display: block; max-width: var(--measure); padding: var(--space-9) 0 var(--space-12); }
 
 /* Silence budget — 02_BRAND_EXPERIENCE_SYSTEM.md §5.
    Generous negative space is the medium, not the leftover. */
 .lede { max-width: var(--measure); }
+
+/* The opening — h1, then the sentence that says what the page is for — is one
+   unit, and it is closed with a rule rather than with a larger type size.
+   §5 asks for "hierarchy through space, not through scale variety" and this
+   site is already carrying a written exception for its type-size count, so
+   buying the intro's rank with a seventh size would spend the wrong budget.
+
+   :first-of-type scopes it to the page's opening. A .lede that introduces a
+   section further down is supporting text and gets no rule, so the device means
+   one thing wherever it appears. */
+main > .lede:first-of-type {
+  padding-bottom: var(--space-8);
+  border-bottom: 1px solid var(--line-hairline);
+}
 .statement {
   max-width: 34ch; font-size: var(--text-2xl); line-height: 1.3;
   margin: var(--space-11) 0; text-wrap: balance;
@@ -442,17 +471,6 @@ nav.siblings .sibling:hover .sibling-title { border-bottom: 1px solid var(--line
 .state-awaiting { border: 0; border-left: 2px solid var(--line-rule); padding: var(--space-2) 0 var(--space-2) var(--space-5); }
 .state-awaiting strong { color: var(--content-primary); font-weight: 500; }
 
-/* Where a photograph will go. The box is reserved at the 4:5 portrait crop a
-   garment is shot in, so the layout is the one the photograph lands in rather
-   than one that shifts when it arrives. It holds no picture: no garment has
-   been made, and a stand-in would depict a product that does not exist. */
-figure.media-absent { margin: var(--space-8) 0; max-width: 32rem; }
-.media-absent-box {
-  aspect-ratio: 4 / 5; width: 100%;
-  border: 1px dashed var(--line-hairline);
-  background: var(--surface-raised);
-}
-
 /* Media — the box is reserved before the image arrives.
 
    No "aspect-ratio: attr(width) / attr(height)". attr() with a type is very
@@ -474,6 +492,39 @@ figure.media figcaption {
   margin-top: var(--space-3);
   color: var(--content-secondary); font-size: var(--text-sm);
 }
+
+/* Where a photograph will go. The box is reserved at the 4:5 portrait crop a
+   garment is shot in, so the layout is the one the photograph lands in rather
+   than one that shifts when it arrives. It holds no picture: no garment has
+   been made, and a stand-in would depict a product that does not exist.
+
+   AFTER figure.media, and that position is the fix, not tidying. The cap
+   below used to sit above it, and figure.media — same specificity, later in
+   the file — won, so the slot inherited the full reading measure and rendered
+   as a 630x790 grey rectangle occupying most of the product page. The
+   deliberate cap had been dead since it was written. Nothing could see it: the
+   markup was right, both rules were right, and only a screenshot shows which
+   one won.
+
+   Unfilled, because filled is what made it read as a failed image rather than
+   as held space. The caption sits INSIDE the frame for the same reason — the
+   sentence explaining why there is no photograph belongs in the space it is
+   explaining, not below it in small grey where it reads as an error message. */
+figure.media.media-absent {
+  margin: var(--space-8) 0;
+  /* A slot, not a page. --space-14 is the widest step in the scale; at the
+     reading measure the empty 4:5 frame was 630x790 and was the largest thing
+     on the product page by a long way, which is a strange amount of the layout
+     to give to the one thing that does not exist. */
+  max-width: var(--space-14);
+  padding: var(--space-5);
+  border: 1px solid var(--line-hairline);
+}
+figure.media.media-absent .media-absent-box {
+  aspect-ratio: 4 / 5; width: 100%;
+  border: 0; background: transparent;
+}
+figure.media.media-absent figcaption { margin-top: var(--space-5); }
 
 /* ---------------------------------------------------------------------------
    Motion — 04_MOTION_LANGUAGE.md §3 (tokens), §6 (reduced motion), §9 (layers)
@@ -698,7 +749,23 @@ figure.media figcaption {
   :root { --text-3xl: 1.953rem; --text-2xl: 1.563rem; }
   .shell { padding: 0 var(--space-4); }
   header.site { flex-direction: column; align-items: flex-start; gap: var(--space-4); }
-  main { padding: var(--space-7) 0 var(--space-10); }
+
+  /* The opening had 40px above the title and 32px below it, and on a 390px
+     screen that put the first paragraph of body copy against the fold with the
+     title crammed on top of it. One step each way separates the page's name
+     from its first sentence without adding a single word.
+
+     Measured, not assumed: 02 §5 asks Layer 1 screens to be >= 40% empty and
+     Philosophy's first screen was at 42% — two points of headroom, entirely
+     because the fold was solid text. */
+  main { padding: var(--space-8) 0 var(--space-10); }
+  h1 { margin-bottom: var(--space-7); }
+
+  /* 96px between sections is a desktop rhythm. On a narrow screen it reads as
+     the page having ended, and it is the reason a mobile reader meets each
+     section alone rather than as part of a whole. Two steps down keeps the
+     separation legible and the document continuous. */
+  h2 { margin-top: var(--space-8); }
 }
 `.trim();
 

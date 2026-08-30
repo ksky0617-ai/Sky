@@ -171,7 +171,18 @@ function atlasPage(atlas: AtlasSpec, published: readonly ProductRevision[]): Rou
   // nobody has done yet rather than a hole.
   const parts = [
     `<h1>${atlas.title}</h1>`,
-    `<div class="lede">${section(atlas.file, 'Focus of Study')}</div>`,
+    // The page opened on a bullet list. `Focus of Study` is a list of what is
+    // examined, so the title sat directly on top of five bullets with no
+    // sentence saying what the reader had arrived at — every other page has an
+    // opening and this one had an inventory.
+    //
+    // The sentence is the Atlas's own description. Not new copy: it is already
+    // the entry on `/nature`, already the entry on the home page, and already
+    // this page's meta description. It was the one place it was not shown was
+    // the page it describes.
+    `<div class="lede"><p>${escapeHtml(atlas.description)}</p></div>`,
+    '<h2>What is studied</h2>',
+    section(atlas.file, 'Focus of Study'),
     '<h2>How it is measured</h2>',
     section(atlas.file, 'Measurement Templates'),
     '<h2>Observations</h2>',

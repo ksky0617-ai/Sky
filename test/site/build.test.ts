@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 
 import { ProductionGuardError, build } from '../../src/site/build.ts';
 import { buildRoutes, countAtlasDataRows, navigation } from '../../src/site/routes.ts';
+import { ATLASES } from '../../src/site/atlases.ts';
 import { escapeHtml, extractSection, renderMarkdown } from '../../src/site/markdown.ts';
 import {
   declarations,
@@ -107,6 +108,33 @@ test('Atlas pages disclose the absence of measurements instead of showing an emp
     const end = source.indexOf('<h2>', start + 4);
     const section = end === -1 ? source.slice(start) : source.slice(start, end);
     assert.ok(!/<table/.test(section), `${atlas} shows an empty measurements table`);
+  }
+});
+
+test('an Atlas opens with the sentence that describes it, from one source', () => {
+  // The page opened on a bullet list: the title sat directly on five bullets
+  // with no sentence saying what the reader had arrived at. Every other page
+  // has an opening; this one had an inventory.
+  //
+  // The sentence is the Atlas's own description — already the entry on /nature,
+  // already the entry on the home page, already this page's meta description.
+  // Pinned to that one source so the opening cannot drift into separate copy.
+  for (const atlas of ATLASES) {
+    const source = html(`en/nature/${atlas.slug}/index.html`);
+    const opening = source.indexOf('<div class="lede">');
+    const firstHeading = source.indexOf('<h2>');
+
+    assert.notEqual(opening, -1, `${atlas.slug} has no opening`);
+    assert.ok(opening < firstHeading, `${atlas.slug} opens on a section rather than on a sentence`);
+    assert.ok(
+      source.slice(opening, firstHeading).includes(atlas.description),
+      `${atlas.slug} opens with copy that is not its own description`,
+    );
+    assert.match(
+      source, new RegExp(`<meta name="description" content="${atlas.description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}">`),
+      `${atlas.slug} describes itself differently to a crawler than to a reader`,
+    );
+    assert.match(source, /<h2>What is studied<\/h2>/, `${atlas.slug} lost the section naming what it examines`);
   }
 });
 

@@ -417,6 +417,85 @@ for (const [name, path] of routes) {
               .map((el) => (el.textContent || '').trim().split(/\s+/).length),
           };
         })(),
+        /* ONE column — the defect a screenshot found and no test could.
+           Prose was capped at the reading measure while tables, preformatted
+           blocks, index lists and figures took the full container, so a page
+           showed a paragraph ending halfway across and a two-column table
+           beneath it stretched to twice that width. Both rules were correct on
+           their own; only their rendered widths side by side show the conflict.
+
+           The reference is the PROSE column — the widest paragraph or list
+           actually laid out — not main's own box. Measuring against main was
+           the first version and it verified nothing: removing the cap makes the
+           tables and main equally wide, so no child exceeds its parent and the
+           check passes on exactly the layout it exists to reject. A mutation
+           caught that. The conflict is between the width the writing is set to
+           and the width everything else takes, so the writing has to be one
+           side of the comparison.
+
+           Anything inside a container that scrolls its own overflow is exempt,
+           and that exemption is the point of .table-scroll and pre rather than
+           a hole in the check: a wide table is SUPPOSED to be wider than the
+           column and scroll within it. The first version said so in a comment
+           and did not implement it, and reported the "code" inside the Atlas
+           field-record template — 532px inside a pre that scrolls correctly —
+           as a page-level overflow. */
+        wide: (() => {
+          const root = document.querySelector('main');
+          if (root === null) return [];
+          const insideScroller = (el) => {
+            for (let p = el.parentElement; p !== null && p !== root; p = p.parentElement) {
+              if (/auto|scroll/.test(getComputedStyle(p).overflowX)) return true;
+            }
+            return false;
+          };
+          const laidOut = (el) => el.getClientRects().length > 0 && !insideScroller(el);
+          const prose = [...root.querySelectorAll('p, ul, ol')]
+            .filter(laidOut)
+            .map((el) => el.getBoundingClientRect().width);
+          if (prose.length === 0) return [];
+          const column = Math.max(...prose) + 1;
+          return [...root.children]
+            .filter(laidOut)
+            .map((el) => ({ el, w: el.getBoundingClientRect().width }))
+            .filter((x) => x.w > column)
+            .map((x) => `${x.el.tagName.toLowerCase()}${x.el.className ? '.' + String(x.el.className).split(' ')[0] : ''} ${Math.round(x.w)}px > ${Math.round(column)}px of writing`);
+        })(),
+
+        /* The reserved photography slot, measured rather than declared.
+           Its deliberate cap sat ABOVE an equally specific rule that set the
+           full reading measure, so the later rule won and the empty 4:5 frame
+           rendered at 630x790 — the largest element on the product page, for
+           the one thing that does not exist. The markup was right and both
+           rules were right; only the rendered width shows which one applied. */
+        absentSlot: (() => {
+          const box = document.querySelector('.media-absent-box');
+          if (box === null) return null;
+          const rect = box.getBoundingClientRect();
+          // The cap is read from the token the stylesheet actually applies, so
+          // this asserts the RULE rather than a number copied out of it.
+          const cap = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--space-14'),
+          );
+          return {
+            width: Math.round(rect.width),
+            cap: Number.isFinite(cap) ? cap : null,
+            ratio: Number((rect.width / Math.max(rect.height, 1)).toFixed(3)),
+          };
+        })(),
+
+        /* The opening — the h1 and the sentence saying what the page is for —
+           is closed with a rule rather than bought with a seventh type size. */
+        openingRule: (() => {
+          const lede = document.querySelector('main > .lede');
+          if (lede === null) return null;
+          const style = getComputedStyle(lede);
+          return {
+            first: lede === document.querySelector('main > .lede:first-of-type'),
+            border: Math.round(parseFloat(style.borderBottomWidth) || 0),
+          };
+        })(),
+
         images: [...document.querySelectorAll('img')].map((img) => ({
           src: img.getAttribute('src'),
           // complete && naturalWidth === 0 is a BROKEN image. A page can look
@@ -532,6 +611,36 @@ for (const [name, path] of routes) {
     );
 
     if (m.overflow) errors.push(`${id}: the page scrolls horizontally`);
+    if (m.wide.length > 0) {
+      errors.push(`${id}: ${m.wide.length} element(s) wider than the content column — ${m.wide.join(', ')}`);
+    }
+    if (m.absentSlot !== null) {
+      /* A reserved slot, not the page — asserted as the cap the stylesheet
+         declares, in pixels.
+
+         The first version of this check compared the slot against the SHARE of
+         the column it takes, and failed on mobile at 75%. That was the check
+         being wrong, not the page: on a 358px column a photograph legitimately
+         spans most of the width, and a share threshold derived from desktop
+         measures something else there. The contract is that the slot has a
+         maximum size; on a narrow screen it fills the column like every other
+         block, which is the correct behaviour and not an exception to it. */
+      if (m.absentSlot.cap !== null && m.absentSlot.width > m.absentSlot.cap + 1) {
+        errors.push(
+          `${id}: the reserved photography slot is ${m.absentSlot.width}px, over its ${m.absentSlot.cap}px cap ` +
+          '— the cap is not applying',
+        );
+      }
+      // 4:5 is the portrait crop a garment is shot in, and the whole argument
+      // for reserving the box is that the layout does not move when the
+      // photograph arrives. A slot at the wrong ratio reserves the wrong space.
+      if (Math.abs(m.absentSlot.ratio - 0.8) > 0.01) {
+        errors.push(`${id}: the reserved photography slot is ${m.absentSlot.ratio}:1, not the 4:5 crop it reserves`);
+      }
+    }
+    if (m.openingRule !== null && m.openingRule.first && m.openingRule.border < 1) {
+      errors.push(`${id}: the opening carries no closing rule, so the intro and the first section read alike`);
+    }
     if (m.hidden > 0) errors.push(`${id}: ${m.hidden} top-level children at opacity 0`);
     if (m.invisible.length > 0) {
       // Motion has become load-bearing: a reader who does not scroll cannot
