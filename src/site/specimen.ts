@@ -147,6 +147,12 @@ export function specimenSvg(): string {
 export function specimenAsset(): MediaAsset {
   return {
     src: SPECIMEN_PATH,
+    // A specimen depicts VALUES, not things: these are the colours and sizes
+    // this page is served in, drawn at their real proportions. It is the one
+    // image this site can honestly carry today, and it is still not a
+    // photograph of anything, so it says so.
+    provenance: 'DESIGN_REFERENCE',
+    disclosure: 'Not a photograph.',
     alt:
       'The construction palette: six neutral greys from white to near-black, labelled ' +
       `${CONSTRUCTION_PREFIX}000 through ${CONSTRUCTION_PREFIX}900, above the six-step type scale ` +

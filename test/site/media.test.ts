@@ -17,7 +17,11 @@ import { resolve } from 'node:path';
 
 import { build, productionArtifacts, ProductionGuardError } from '../../src/site/build.ts';
 import { buildRoutes } from '../../src/site/routes.ts';
-import { assertMediaAsset, MediaContractViolation, renderFigure, type MediaAsset } from '../../src/site/media.ts';
+import {
+  assertMediaAsset, MediaContractViolation, PROVENANCE, REAL, renderFigure, type MediaAsset,
+} from '../../src/site/media.ts';
+import { Catalog, variant } from '../../src/catalog/catalog.ts';
+import { FileStorage } from '../../src/persistence/file-storage.ts';
 import {
   CONSTRUCTION_PALETTE,
   SPECIMEN_HEIGHT,
@@ -38,7 +42,12 @@ const read = (relativePath: string): string => readFileSync(resolve(outDir, rela
 test.after(() => rmSync(outDir, { recursive: true, force: true }));
 
 const valid: MediaAsset = {
-  src: '/media/example.svg', alt: 'A description.', width: 800, height: 400, caption: null,
+  // A raster path: the contract refuses an SVG that claims to be a photograph,
+  // and this fixture is the photograph case.
+  src: '/media/example.jpg', alt: 'A description.', width: 800, height: 400, caption: null,
+  // A photograph carries no disclosure: it has nothing to disclose. Everything
+  // else must say what it is, and the contract enforces the asymmetry.
+  provenance: 'ACTUAL_PHOTOGRAPH', disclosure: null,
 };
 
 // --- the contract refuses what it must -----------------------------------
@@ -230,5 +239,122 @@ test('the production guard is fed every artifact, not only the stylesheet', () =
       `${name} carries no construction token — either it is clean (update this test and the ` +
         'gate) or the guard is now looking at the wrong thing',
     );
+  }
+});
+
+// --- provenance: what an image IS ----------------------------------------
+//
+// The contract enforced alt text and intrinsic dimensions and was silent on the
+// one property this brand's honesty rests on. An AI-generated garment render
+// and a photograph of a finished coat were the same type, rendered by the same
+// function, into the same markup — nothing in the system could tell them apart.
+
+test('an image whose kind is unknown cannot be published', () => {
+  for (const bogus of ['', 'PHOTO', 'photograph', 'RENDER', 'true']) {
+    assert.throws(
+      () => assertMediaAsset({ ...valid, provenance: bogus as never, disclosure: 'x' }),
+      MediaContractViolation,
+      `"${bogus}" was accepted as a kind of image`,
+    );
+  }
+});
+
+test('anything that is not a photograph must say so, and a photograph must not', () => {
+  // The asymmetry is the whole mechanism. If a disclosure were merely optional,
+  // the dangerous case would be the one you get by forgetting.
+  for (const provenance of PROVENANCE) {
+    if (provenance === REAL) continue;
+    assert.throws(
+      () => assertMediaAsset({ ...valid, provenance, disclosure: null }),
+      MediaContractViolation,
+      `${provenance} rendered with nothing telling the reader what it is`,
+    );
+    assert.throws(
+      () => assertMediaAsset({ ...valid, provenance, disclosure: '   ' }),
+      MediaContractViolation,
+      `${provenance} passed with a blank disclosure`,
+    );
+    // And with one, it is accepted.
+    assertMediaAsset({ ...valid, provenance, disclosure: 'Not a photograph.' });
+  }
+
+  assert.throws(
+    () => assertMediaAsset({ ...valid, provenance: REAL, disclosure: 'Not a photograph.' }),
+    MediaContractViolation,
+    'a photograph was allowed to carry a disclosure, which makes the disclosure mean nothing',
+  );
+});
+
+test('a vector drawing cannot claim to be a photograph', () => {
+  // The one machine-checkable half of the claim. A mutation flipped this site's
+  // only image — a generated specimen — to ACTUAL_PHOTOGRAPH, and the browser
+  // check passed completely: a declared photograph is exempt from the
+  // disclosure rule, so lying about the kind removed the evidence of the lie.
+  assert.throws(
+    () => assertMediaAsset({ ...valid, src: '/media/construction-specimen.svg', provenance: REAL, disclosure: null }),
+    MediaContractViolation,
+    'an SVG was accepted as a photograph',
+  );
+  // A raster file is accepted, which is the honest boundary: a generated PNG
+  // labelled as a photograph is indistinguishable from a real one to every
+  // check in this repository, and that is human review, not a gap being hidden.
+  assertMediaAsset({ ...valid, src: '/media/coat.jpg', provenance: REAL, disclosure: null });
+});
+
+test('the disclosure is rendered where a reader can read it, not only where the type can', () => {
+  const html = renderFigure({
+    ...valid,
+    provenance: 'AI_GENERATED',
+    disclosure: 'Generated image. No such garment exists.',
+    caption: 'A study.',
+  });
+  assert.match(html, /data-provenance="AI_GENERATED"/, 'the kind is not in the markup');
+  assert.match(html, /<figcaption><strong class="provenance">Generated image\. No such garment exists\.<\/strong>/);
+  // Leading the caption, not trailing it: a disclosure a reader reaches after
+  // the description has already done its work is a footnote.
+  assert.ok(
+    html.indexOf('Generated image') < html.indexOf('A study.'),
+    'the disclosure follows the caption instead of leading it',
+  );
+});
+
+test('a caption is optional; a disclosure still produces one', () => {
+  const html = renderFigure({
+    ...valid, provenance: 'PLACEHOLDER', disclosure: 'Space held for an image that does not exist.',
+    caption: null,
+  });
+  assert.match(html, /<figcaption>/, 'the disclosure was dropped with the caption');
+  assert.match(html, /Space held for an image/);
+});
+
+test('THE ONE IMAGE THIS SITE PUBLISHES declares itself as not a photograph', () => {
+  const page = read('en/olibana/design-language/index.html');
+  assert.match(page, /data-provenance="DESIGN_REFERENCE"/, 'the specimen does not say what it is');
+  assert.match(page, /<strong class="provenance">Not a photograph\.<\/strong>/);
+});
+
+test('GATE-005: no product page publishes an image of any kind', () => {
+  // The gate is about photography, and the reason it stays shut is that no
+  // garment exists. Until it opens, a product page renders NO image — not a
+  // render, not a concept, not a generated study. Asserted on the built page
+  // rather than on the renderer, because the renderer is not what ships.
+  const outProduct = mkdtempSync(resolve(tmpdir(), 'olibana-gate005-'));
+  try {
+    const catalogPath = resolve(outProduct, 'catalog.jsonl');
+    const catalog = new Catalog(new FileStorage(catalogPath));
+    catalog.record({
+      productId: 'PRD_g5', code: 'OLB-CT-001', name: 'Fixture Coat', category: 'CT',
+      status: 'PUBLISHED', summary: 'A fixture.', variants: [variant('OLB-CT-001', 'STN', 'M', { amount: 68000, currency: 'JPY' })],
+      measurements: [], naturalRule: null, materials: [], productionLeadDays: 60, actor: 'test',
+    });
+    const out = resolve(outProduct, 'site');
+    build({ outDir: out, catalogPath });
+    const page = readFileSync(resolve(out, 'en/products/olb-ct-001/index.html'), 'utf8');
+
+    assert.ok(!/<img/.test(page), 'a product page published an image while GATE-005 is open');
+    assert.match(page, /media-absent/, 'the reserved slot is gone');
+    assert.match(page, /No photograph of Fixture Coat exists yet/);
+  } finally {
+    rmSync(outProduct, { recursive: true, force: true });
   }
 });

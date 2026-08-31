@@ -496,6 +496,24 @@ for (const [name, path] of routes) {
           };
         })(),
 
+        /* Provenance, measured on the painted page.
+           02 §7 rejects "any production process depicted that does not occur",
+           and the media contract now refuses to render an image that does not
+           say what it is. That rule protected the codebase; this checks it
+           reached the reader. An image is not a photograph unless it says so,
+           and a disclosure that is in the markup but not painted — clipped,
+           zero-height, transparent — is a disclosure nobody made. */
+        provenance: [...document.querySelectorAll('figure.media')].map((fig) => {
+          const kind = fig.getAttribute('data-provenance');
+          const note = fig.querySelector('.provenance');
+          const painted = note !== null &&
+            note.getClientRects().length > 0 &&
+            (note.textContent || '').trim() !== '' &&
+            Number(getComputedStyle(note).opacity) > 0.99 &&
+            note.getBoundingClientRect().height > 0;
+          return { src: fig.querySelector('img')?.getAttribute('src') ?? '(no image)', kind, painted };
+        }),
+
         images: [...document.querySelectorAll('img')].map((img) => ({
           src: img.getAttribute('src'),
           // complete && naturalWidth === 0 is a BROKEN image. A page can look
@@ -636,6 +654,16 @@ for (const [name, path] of routes) {
       // photograph arrives. A slot at the wrong ratio reserves the wrong space.
       if (Math.abs(m.absentSlot.ratio - 0.8) > 0.01) {
         errors.push(`${id}: the reserved photography slot is ${m.absentSlot.ratio}:1, not the 4:5 crop it reserves`);
+      }
+    }
+    for (const fig of m.provenance) {
+      if (fig.kind === null || fig.kind === '') {
+        errors.push(`${id}: ${fig.src} is published without saying what kind of image it is`);
+      } else if (fig.kind !== 'ACTUAL_PHOTOGRAPH' && !fig.painted) {
+        errors.push(
+          `${id}: ${fig.src} is ${fig.kind} and its disclosure is not painted — ` +
+          'the reader is shown an image that does not say it is not a photograph',
+        );
       }
     }
     if (m.openingRule !== null && m.openingRule.first && m.openingRule.border < 1) {

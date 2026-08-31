@@ -67,10 +67,21 @@ export function note(html: string): string {
  * layout decision, not a claim about a photograph.
  */
 export function absentPhotography(subject: string): string {
+  // Declares its provenance like every other figure on this site, and that is
+  // not bookkeeping. This block is the ONE place that stands in for a
+  // photograph, and it was the one place outside the media contract — it builds
+  // its markup here rather than through `renderFigure`, so the rule that every
+  // image must say what it is did not reach the element whose whole job is
+  // being where an image is not. A browser check found it by reading
+  // data-provenance off every figure and finding this one unlabelled.
+  //
+  // PLACEHOLDER, and the sentence carries the same `provenance` class the
+  // contract uses, so the same check that proves a generated image discloses
+  // itself proves this one does.
   return (
-    '<figure class="media media-absent" role="note">' +
+    '<figure class="media media-absent" role="note" data-provenance="PLACEHOLDER">' +
     '<div class="media-absent-box" aria-hidden="true"></div>' +
-    `<figcaption>No photograph of ${escapeHtml(subject)} exists yet. ` +
+    `<figcaption><strong class="provenance">No photograph of ${escapeHtml(subject)} exists yet.</strong> ` +
     'It will be taken when the garment is made — nothing here stands in for it.</figcaption>' +
     '</figure>'
   );
