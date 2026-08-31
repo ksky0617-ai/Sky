@@ -77,6 +77,27 @@ const CALLED_FROM_OUTSIDE_SRC: Readonly<Record<string, string>> = {
   specimenSvg: 'emitted by the build',
   countAtlasDataRows: 'used by the search index and by the Atlas contract tests',
 
+  // --- the concept-visual pipeline, which has no provider ---------------
+  //
+  // These are the ONE case in this file where "no caller in src/" is the
+  // correct state rather than a defect, and the reason has to be read as a
+  // whole. The pipeline turns a reviewed brief into a validated asset. Wiring
+  // it to a page would mean publishing a generated image, and GATE-005 says
+  // this site publishes none until a garment exists and is photographed.
+  //
+  // So the entry point is a future generation step that needs credentials this
+  // repository does not have, and until then every path through the module is
+  // exercised by the contract tests instead. That is a weaker guarantee than a
+  // real caller and it is recorded as one: if GATE-005 opens and a page starts
+  // rendering concept visuals, these entries come out and the caller check
+  // covers them properly.
+  briefForProduct:
+    'entry point of the concept-visual pipeline; deliberately unwired while GATE-005 is open, ' +
+    'because a caller would mean publishing a generated image. Exercised by test/site/concept-visual.test.ts',
+  requestFor:
+    'entry point of the concept-visual pipeline; the reviewed brief becomes a request here, and the ' +
+    'request is only sent by a provider that needs credentials this repository does not have',
+
   // --- checks and lints, which are tests by construction ----------------
   contrastRatio: 'the unit-level equivalent of the browser contrast sweep',
   resolveRoles: 'resolves the palette per light state for the contrast checks',

@@ -31,6 +31,7 @@
  */
 
 import { escapeHtml } from './markdown.ts';
+import { renderReservedSlot } from './media.ts';
 
 /**
  * Something that does not exist yet, with the reason it does not.
@@ -67,22 +68,19 @@ export function note(html: string): string {
  * layout decision, not a claim about a photograph.
  */
 export function absentPhotography(subject: string): string {
-  // Declares its provenance like every other figure on this site, and that is
-  // not bookkeeping. This block is the ONE place that stands in for a
-  // photograph, and it was the one place outside the media contract — it builds
-  // its markup here rather than through `renderFigure`, so the rule that every
-  // image must say what it is did not reach the element whose whole job is
-  // being where an image is not. A browser check found it by reading
-  // data-provenance off every figure and finding this one unlabelled.
-  //
-  // PLACEHOLDER, and the sentence carries the same `provenance` class the
-  // contract uses, so the same check that proves a generated image discloses
-  // itself proves this one does.
-  return (
-    '<figure class="media media-absent" role="note" data-provenance="PLACEHOLDER">' +
-    '<div class="media-absent-box" aria-hidden="true"></div>' +
-    `<figcaption><strong class="provenance">No photograph of ${escapeHtml(subject)} exists yet.</strong> ` +
-    'It will be taken when the garment is made — nothing here stands in for it.</figcaption>' +
-    '</figure>'
-  );
+  // Delegates to the media contract rather than assembling its own markup.
+  // This block is the ONE place on the site that stands in for a photograph,
+  // and while it built its own figure here it was the one figure outside the
+  // photography rules entirely — it shipped with no provenance at all until a
+  // browser check read `data-provenance` off every figure and found this one
+  // unlabelled. A rule that does not reach the space held for the thing it
+  // governs is not a rule.
+  return renderReservedSlot({
+    subject,
+    // The portrait crop a garment is shot in. A layout decision, not a claim
+    // about a photograph.
+    ratio: [4, 5],
+    disclosure: `No photograph of ${subject} exists yet.`,
+    note: 'It will be taken when the garment is made — nothing here stands in for it.',
+  });
 }

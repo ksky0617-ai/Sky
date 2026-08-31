@@ -333,6 +333,22 @@ test('THE ONE IMAGE THIS SITE PUBLISHES declares itself as not a photograph', ()
   assert.match(page, /<strong class="provenance">Not a photograph\.<\/strong>/);
 });
 
+test('GATE-005: the whole built site publishes no generated imagery', () => {
+  // Bypassing the pipeline means hand-building a generated asset and rendering
+  // it. The pipeline itself cannot produce a photograph, so the remaining route
+  // to a generated image on a page is to skip the pipeline entirely — and that
+  // is caught here, on the built output, where it would actually land.
+  for (const file of result.files.filter((f) => f.endsWith('.html'))) {
+    const page = read(file);
+    for (const kind of ['CONCEPT_RENDER', 'AI_GENERATED']) {
+      assert.ok(
+        !page.includes(`data-provenance="${kind}"`),
+        `${file} publishes a ${kind} image while GATE-005 is open`,
+      );
+    }
+  }
+});
+
 test('GATE-005: no product page publishes an image of any kind', () => {
   // The gate is about photography, and the reason it stays shut is that no
   // garment exists. Until it opens, a product page renders NO image — not a

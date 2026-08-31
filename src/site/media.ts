@@ -129,13 +129,11 @@ export function assertMediaAsset(asset: MediaAsset): void {
     );
   }
 
-  // The asymmetry is the point. A photograph has nothing to disclose; anything
-  // else has one thing to disclose and must say it in the page, not in a
-  // comment or a data attribute a reader never sees.
   // The one machine-checkable half of "is this really a photograph".
   //
   // A camera does not produce an SVG. It is a drawing format, so a file that
-  // claims to be a photograph and is one is a contradiction the build can see,
+  // claims to be a photograph and is a drawing is a contradiction the build
+  // can see,
   // and this site's only image today is exactly that: a generated specimen.
   // A mutation proved the need — flipping the specimen to ACTUAL_PHOTOGRAPH
   // was caught by a unit test and passed the browser check completely, because
@@ -154,17 +152,40 @@ export function assertMediaAsset(asset: MediaAsset): void {
     );
   }
 
-  if (asset.provenance === REAL) {
-    if (asset.disclosure !== null) {
+  assertDisclosure(asset.provenance, asset.disclosure, asset.src);
+}
+
+/**
+ * The disclosure rule, in one place.
+ *
+ * Extracted because the reserved photography slot needs it too, and that slot
+ * used to be a hand-written figure outside this module entirely — the one block
+ * on the site standing in for a photograph was the one block the photography
+ * rules did not reach. Two callers, one implementation: the rule cannot now
+ * hold for an image and fail to hold for the space held for one.
+ *
+ * The asymmetry is the point. A photograph has nothing to disclose; anything
+ * else has exactly one thing to disclose and must say it in the page, not in a
+ * comment or a data attribute a reader never sees.
+ */
+export function assertDisclosure(
+  provenance: Provenance,
+  disclosure: string | null,
+  what: string,
+): void {
+  if (provenance === REAL) {
+    if (disclosure !== null) {
       throw new MediaContractViolation(
-        `${asset.src} is a photograph and carries a disclosure — a photograph of a real ` +
+        `${what} is a photograph and carries a disclosure — a photograph of a real ` +
           'object has nothing to disclose, and saying otherwise makes the disclosure meaningless ' +
           'where it matters',
       );
     }
-  } else if (asset.disclosure === null || asset.disclosure.trim() === '') {
+    return;
+  }
+  if (disclosure === null || disclosure.trim() === '') {
     throw new MediaContractViolation(
-      `${asset.src} is ${asset.provenance} and carries no disclosure — an image that is not a ` +
+      `${what} is ${provenance} and carries no disclosure — an image that is not a ` +
         'photograph must say so where the reader can read it (02 §7)',
     );
   }
@@ -205,4 +226,53 @@ export function renderFigure(asset: MediaAsset, options: { readonly lazy?: boole
     `loading="${lazy ? 'lazy' : 'eager'}" decoding="async">` +
     `${caption}</figure>`
   );
+}
+
+/**
+ * Space reserved for an image that does not exist.
+ *
+ * Represented HERE, in the media module, rather than assembled by hand
+ * somewhere else. It is a `PLACEHOLDER`, it goes through the same disclosure
+ * rule as every other figure, and the honesty check that covers a generated
+ * image covers this too. Before this it was a hand-written figure in
+ * `states.ts`, which meant the one block on the site standing in for a
+ * photograph was the one block outside the photography contract — a browser
+ * check found it unlabelled.
+ *
+ * The box holds NO image, and that is asserted rather than assumed: a reserved
+ * slot that quietly acquired a picture would be exactly the failure GATE-005
+ * exists to prevent, reached through the one component nobody would think to
+ * check.
+ */
+export interface ReservedSlot {
+  /** What the missing image would be of. */
+  readonly subject: string;
+  /** Aspect ratio as [width, height]. 4:5 is the portrait crop a garment is shot in. */
+  readonly ratio: readonly [number, number];
+  /** The sentence saying what is not here. */
+  readonly disclosure: string;
+  /** What has to happen before the space can be filled. */
+  readonly note: string;
+}
+
+export function renderReservedSlot(slot: ReservedSlot): string {
+  const what = `the reserved slot for ${slot.subject}`;
+  assertDisclosure('PLACEHOLDER', slot.disclosure, what);
+  const [w, h] = slot.ratio;
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w <= 0 || h <= 0) {
+    throw new MediaContractViolation(`${what} has no usable ratio (${w}:${h})`);
+  }
+
+  const html =
+    '<figure class="media media-absent" role="note" data-provenance="PLACEHOLDER">' +
+    '<div class="media-absent-box" aria-hidden="true"></div>' +
+    `<figcaption><strong class="provenance">${escapeHtml(slot.disclosure)}</strong> ` +
+    `${escapeHtml(slot.note)}</figcaption>` +
+    '</figure>';
+
+  // The one thing a reserved slot must never become.
+  if (/<img\b/i.test(html)) {
+    throw new MediaContractViolation(`${what} contains an image`);
+  }
+  return html;
 }

@@ -659,6 +659,16 @@ for (const [name, path] of routes) {
     for (const fig of m.provenance) {
       if (fig.kind === null || fig.kind === '') {
         errors.push(`${id}: ${fig.src} is published without saying what kind of image it is`);
+      } else if (fig.kind === 'CONCEPT_RENDER' || fig.kind === 'AI_GENERATED') {
+        // GATE-005 is open, so this site publishes no generated imagery at all.
+        // The concept-visual pipeline exists to keep the distinction honest
+        // when the gate opens; until then a generated image reaching a page is
+        // the thing the gate is holding shut, and it would arrive looking
+        // entirely correct — labelled, disclosed, contract-satisfying.
+        errors.push(
+          `${id}: ${fig.src} is ${fig.kind} and is published while GATE-005 is open — ` +
+          'this site ships no generated imagery',
+        );
       } else if (fig.kind !== 'ACTUAL_PHOTOGRAPH' && !fig.painted) {
         errors.push(
           `${id}: ${fig.src} is ${fig.kind} and its disclosure is not painted — ` +
